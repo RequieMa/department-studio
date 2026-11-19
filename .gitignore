@@ -1,0 +1,30 @@
+# User/editor settings
+.vscode/
+
+# Python and uv-managed environments
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local runtime state and credentials
+.department-studio/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Build and verification artifacts
+dist/
+build/
+*.egg-info/
+artifacts/
+test-results/
+
+# Optional isolated implementation worktrees
+.worktrees/
