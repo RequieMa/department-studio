@@ -1,6 +1,8 @@
 # Department Studio Bootstrap Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (the installed Pi adaptation) to implement this plan task-by-task. Steps use checkbox syntax for tracking. All Python commands use `uv`. The implementation design is approved; execution workspace/strategy is selected at handoff.
+> **Execution update (2026-11-19):** Subagent startup/authentication failed. The user authorized: “Continue TDD here and report the missing independent reviews.” Implementation therefore uses direct TDD in `.worktrees/bootstrap`, branch `feat/communication-bootstrap`. Independent spec-compliance and quality reviews remain outstanding. All Python commands use `uv`.
+
+Checked steps record implementation and automated verification, not independent approval. The per-task review/commit gates below remain unchecked; implementation is consolidated into one local commit for review. See `docs/verification.md` for test evidence, self-review findings and the remaining live acceptance work.
 
 **Goal:** Let one human create user-named departments, assign models/workspaces, and run bounded real Pi-backed conversations in one local room, ready for user-directed self-development.
 
@@ -135,8 +137,8 @@ The owner token is generated at launch, never passed to Pi. Provide a local URL 
 
 **Create:** `pyproject.toml`, `.python-version`, `src/department_studio/__init__.py`, `config.py`, `tests/test_config.py`. Update `.gitignore`. Generate `uv.lock` with uv.
 
-- [ ] Verify current Git status and selected execution branch/workspace. Do not overwrite `.vscode/settings.json`.
-- [ ] Define packaging and tool settings:
+- [x] Verify current Git status and selected execution branch/workspace. Do not overwrite `.vscode/settings.json`.
+- [x] Define packaging and tool settings:
 
 ```toml
 [build-system]
@@ -167,7 +169,7 @@ line-length = 100
 target-version = "py312"
 ```
 
-- [ ] Add dependencies through uv:
+- [x] Add dependencies through uv:
 
 ```bash
 uv python pin 3.12
@@ -176,16 +178,16 @@ uv add --dev pytest pytest-asyncio httpx ruff playwright
 uv sync --locked
 ```
 
-- [ ] Write tests before the configuration implementation. `Settings` exposes `host` (default `127.0.0.1`), `port` (8765), `data_dir` (resolved `.department-studio`), `pi_executable` (`pi` resolved through PATH), `max_concurrency` (2), `max_chain_deliveries` (8), `run_timeout_seconds` (300) and `stop_timeout_seconds` (10). Expose `origin` as the computed loopback HTTP URL. Reject nonpositive limits, invalid ports and non-loopback binding.
-- [ ] Run `uv run pytest tests/test_config.py -q`, observe missing behavior, implement `Settings`, and rerun until green.
-- [ ] Use private, git-ignored `.department-studio/` for DB/sessions and a file lock to prevent two service processes opening the same application data directory. Test lock contention without starting Pi.
+- [x] Write tests before the configuration implementation. `Settings` exposes `host` (default `127.0.0.1`), `port` (8765), `data_dir` (resolved `.department-studio`), `pi_executable` (`pi` resolved through PATH), `max_concurrency` (2), `max_chain_deliveries` (8), `run_timeout_seconds` (300) and `stop_timeout_seconds` (10). Expose `origin` as the computed loopback HTTP URL. Reject nonpositive limits, invalid ports and non-loopback binding.
+- [x] Run `uv run pytest tests/test_config.py -q`, observe missing behavior, implement `Settings`, and rerun until green.
+- [x] Use private, git-ignored `.department-studio/` for DB/sessions and a file lock to prevent two service processes opening the same application data directory. Test lock contention without starting Pi.
 - [ ] Run `uv run ruff check .` and commit only this task's files after review.
 
 ## Task 2: user-named departments and transactional room storage
 
 **Create:** `domain.py`, `store.py`, `tests/test_leads.py`, `tests/test_store.py`.
 
-- [ ] Write the custom-name and stable-identity regression first:
+- [x] Write the custom-name and stable-identity regression first:
 
 ```python
 from department_studio.domain import LeadCreate
@@ -209,25 +211,25 @@ def test_user_names_and_rename_preserve_identity(tmp_path):
     assert store.resolve_mentions("@forge review this") == [lead.id]
 ```
 
-- [ ] Run `uv run pytest tests/test_leads.py -q`; implement validated models and SQLite-backed CRUD to satisfy it.
-- [ ] Add separate failing tests for duplicate/reserved handles, normalized case, names unrelated to roles, invalid workspaces, optimistic revision conflicts, busy lead edits, and workspace changes creating new conversation IDs. Implement each behavior and rerun.
-- [ ] Implement transactional tables for leads, room state, chains, messages, deliveries and bridge idempotency receipts. Use SQLite foreign keys, WAL, bounded busy timeout and explicit transactions. Keep synchronous transactions free of awaits.
-- [ ] Write routing tests: unaddressed human message has no recipients; enabled `@all` expansion; explicit disabled/unknown handles fail; email addresses do not become mentions; public assistant text never dispatches. Mention matching uses standalone `@handle` tokens, case-insensitively, not substring search against display names.
-- [ ] Write tests proving message insertion + delivery reservation are atomic, eight-delivery allowance never partially fans out, and the same bridge call returns its saved receipt without re-enqueueing.
-- [ ] Write tests that pause/invalidate rejects stale bridge posts; canceled/interrupted work is not revived on resume; restarting preserves message snapshots and starts paused.
+- [x] Run `uv run pytest tests/test_leads.py -q`; implement validated models and SQLite-backed CRUD to satisfy it.
+- [x] Add separate failing tests for duplicate/reserved handles, normalized case, names unrelated to roles, invalid workspaces, optimistic revision conflicts, busy lead edits, and workspace changes creating new conversation IDs. Implement each behavior and rerun.
+- [x] Implement transactional tables for leads, room state, chains, messages, deliveries and bridge idempotency receipts. Use SQLite foreign keys, WAL, bounded busy timeout and explicit transactions. Keep synchronous transactions free of awaits.
+- [x] Write routing tests: unaddressed human message has no recipients; enabled `@all` expansion; explicit disabled/unknown handles fail; email addresses do not become mentions; public assistant text never dispatches. Mention matching uses standalone `@handle` tokens, case-insensitively, not substring search against display names.
+- [x] Write tests proving message insertion + delivery reservation are atomic, eight-delivery allowance never partially fans out, and the same bridge call returns its saved receipt without re-enqueueing.
+- [x] Write tests that pause/invalidate rejects stale bridge posts; canceled/interrupted work is not revived on resume; restarting preserves message snapshots and starts paused.
 - [ ] Run `uv run pytest tests/test_leads.py tests/test_store.py -q`; inspect schema/diff and commit after review.
 
 ## Task 3: backend-neutral scheduling and stopping
 
 **Create:** `backends/__init__.py`, `backends/base.py`, `service.py`, `tests/fakes.py`, `tests/test_service.py`.
 
-- [ ] Implement the shared backend declarations above, then a test-only fake with controllable start/release/cancel barriers. Keep fake models and responses out of production modules.
-- [ ] Write failing service tests that start two departments with arbitrary names, verify independent conversation IDs, and assert maximum two active runs and one run per lead.
-- [ ] Implement `RoomService` with a dispatcher, persisted delivery claims, active-run tracking and an injected backend. Each prompt contains the addressed input, authenticated sender identity, originating human request, and up to 50 labeled public messages. Say when older messages are omitted.
-- [ ] Verify final replies are persisted once without parsing their mentions. Expose failure/timeout separately from successful completion. Empty final text may complete a delivery but must not fabricate a reply.
-- [ ] Write stop tests before implementing stop logic: mark room paused/invalidate first, revoke bridge tokens, cancel pending work, request backend cancellation, and keep an unconfirmed stop unavailable. Resume does not replay old work.
-- [ ] Implement timeout using the same per-lead invalidation/stop lifecycle, not simply `wait_for` plus freeing the slot. A canceled coroutine is not proof that its subprocess stopped.
-- [ ] Test races: stop during claim, bridge post during stop, late final output after invalidation, timeout followed by a new human message, and shutdown while two runs are active.
+- [x] Implement the shared backend declarations above, then a test-only fake with controllable start/release/cancel barriers. Keep fake models and responses out of production modules.
+- [x] Write failing service tests that start two departments with arbitrary names, verify independent conversation IDs, and assert maximum two active runs and one run per lead.
+- [x] Implement `RoomService` with a dispatcher, persisted delivery claims, active-run tracking and an injected backend. Each prompt contains the addressed input, authenticated sender identity, originating human request, and up to 50 labeled public messages. Say when older messages are omitted.
+- [x] Verify final replies are persisted once without parsing their mentions. Expose failure/timeout separately from successful completion. Empty final text may complete a delivery but must not fabricate a reply.
+- [x] Write stop tests before implementing stop logic: mark room paused/invalidate first, revoke bridge tokens, cancel pending work, request backend cancellation, and keep an unconfirmed stop unavailable. Resume does not replay old work.
+- [x] Implement timeout using the same per-lead invalidation/stop lifecycle, not simply `wait_for` plus freeing the slot. A canceled coroutine is not proof that its subprocess stopped.
+- [x] Test races: stop during claim, bridge post during stop, late final output after invalidation, timeout followed by a new human message, and shutdown while two runs are active.
 - [ ] Run `uv run pytest tests/test_service.py -q` and the store tests. Commit after spec and quality reviews.
 
 ## Task 4: native Pi RPC adapter and structured room bridge
@@ -236,29 +238,29 @@ def test_user_names_and_rename_preserve_identity(tmp_path):
 
 Before implementing harness integration, read the relevant installed docs/examples in full. Root: `/home/zengma/.local/share/qgenie-cli/pi-cli/.npm-global/bin/`. Required: `docs/cli.md`, `cli-integration.md`, `rpc.md`, `rpc-commands.md`, `json.md`, `rpc-extension-ui.md`, `extensions.md`, `configuration.md`, `security.md`, relevant model/provider references, `examples/rpc-client.ts`, `examples/extensions/hello.ts` if present, and a custom-tool example identified in `examples/extensions/README.md`. Follow related references needed for the APIs actually used. Do not read credential values or update Pi.
 
-- [ ] Create a fake JSONL Pi child. Launch test Python through `["uv", "run", "--project", project_root, "--no-sync", "python", fixture_path]`, not a global interpreter.
-- [ ] Write transport tests for split byte chunks, CRLF, literal Unicode line separators inside JSON, mismatched command IDs, malformed records, EOF, stderr draining, rejected prompt and startup failure. Implement LF-only record framing and correlated pending requests.
-- [ ] Write lifecycle tests: accepted prompt is not completion; `agent_end` is not settled; provider failure followed by settled is failed; handled-without-run prompts do not hang; queued input cannot survive clear-queue/abort; cancellation waits for idle or confirmed process exit.
-- [ ] Use a fresh RPC child for each delivery, reopening the department's explicit persisted conversation. This bounds each child's bridge credential to one immutable delivery/generation while retaining conversation history. It avoids changing environment credentials inside an already-running lead.
-- [ ] Build argv without a shell. Select exact model/provider, explicit session ID and session directory, explicit workspace cwd, resource-disabling flags and a sole project bridge extension. Choose tools from Discuss/Develop policy. Load approved project instructions deliberately; do not turn project trust into implicit permission for unrelated extensions or MCP servers.
-- [ ] Keep runtime/model configuration controls inside this adapter. Project Python remains uv-managed; Pi runs as the installed external executable.
-- [ ] Before prompting, request runtime state and verify model selection. Prompt text is an attributed data envelope, never a raw room slash command. Extract public final assistant text only; never broadcast thinking or raw tool results.
-- [ ] Implement model enumeration using a no-prompt, no-tool RPC process; project only `{provider,id,name}` into `ModelOption`. Never expose raw model definitions/headers or use a model invocation as a metadata probe.
-- [ ] Register `send_room_message` in the project extension with text and recipient-handle arguments. Pi accepts ordinary JSON Schema parameters, so use a plain schema and type-only Pi imports for this small bridge; do not vendor host-provided Pi/TypeBox packages. Its HTTP callback uses per-delivery URL/credential supplied by the host. Derive `call_id` from the tool invocation, not model arguments. Await committed acknowledgement, surface non-2xx errors and propagate cancellation. Do not let tool arguments choose actor, role, run generation or credentials.
-- [ ] Test the extension with a mocked Pi registration API and local test HTTP server; verify payload, credential scoping, idempotency key, failures and abort handling. Do not invoke a model.
-- [ ] Close stdin for graceful shutdown; bound waiting and escalate to process-group termination when needed. Record uncertainty honestly if termination cannot be confirmed. Never claim rollback of existing edits.
+- [x] Create a fake JSONL Pi child. Launch test Python through `["uv", "run", "--project", project_root, "--no-sync", "python", fixture_path]`, not a global interpreter.
+- [x] Write transport tests for split byte chunks, CRLF, literal Unicode line separators inside JSON, mismatched command IDs, malformed records, EOF, stderr draining, rejected prompt and startup failure. Implement LF-only record framing and correlated pending requests.
+- [x] Write lifecycle tests: accepted prompt is not completion; `agent_end` is not settled; provider failure followed by settled is failed; handled-without-run prompts do not hang; queued input cannot survive clear-queue/abort; cancellation waits for idle or confirmed process exit.
+- [x] Use a fresh RPC child for each delivery, reopening the department's explicit persisted conversation. This bounds each child's bridge credential to one immutable delivery/generation while retaining conversation history. It avoids changing environment credentials inside an already-running lead.
+- [x] Build argv without a shell. Select exact model/provider, explicit session ID and session directory, explicit workspace cwd, resource-disabling flags and a sole project bridge extension. Choose tools from Discuss/Develop policy. Load approved project instructions deliberately; do not turn project trust into implicit permission for unrelated extensions or MCP servers.
+- [x] Keep runtime/model configuration controls inside this adapter. Project Python remains uv-managed; Pi runs as the installed external executable.
+- [x] Before prompting, request runtime state and verify model selection. Prompt text is an attributed data envelope, never a raw room slash command. Extract public final assistant text only; never broadcast thinking or raw tool results.
+- [x] Implement model enumeration using a no-prompt, no-tool RPC process; project only `{provider,id,name}` into `ModelOption`. Never expose raw model definitions/headers or use a model invocation as a metadata probe.
+- [x] Register `send_room_message` in the project extension with text and recipient-handle arguments. Pi accepts ordinary JSON Schema parameters, so use a plain schema and type-only Pi imports for this small bridge; do not vendor host-provided Pi/TypeBox packages. Its HTTP callback uses per-delivery URL/credential supplied by the host. Derive `call_id` from the tool invocation, not model arguments. Await committed acknowledgement, surface non-2xx errors and propagate cancellation. Do not let tool arguments choose actor, role, run generation or credentials.
+- [x] Test the extension with a mocked Pi registration API and local test HTTP server; verify payload, credential scoping, idempotency key, failures and abort handling. Do not invoke a model.
+- [x] Close stdin for graceful shutdown; bound waiting and escalate to process-group termination when needed. Record uncertainty honestly if termination cannot be confirmed. Never claim rollback of existing edits.
 - [ ] Run `uv run pytest tests/test_rpc.py tests/test_pi.py -q` and `node --test tests/test_bridge_extension.mjs`. Commit after review.
 
 ## Task 5: authenticated HTTP application and launcher
 
 **Create:** `security.py`, `api.py`, `cli.py`, `tests/test_api.py`, `tests/test_security.py`, `tests/test_packaging.py`.
 
-- [ ] Write tests against an app factory injecting a test backend and temporary Store. Require owner authentication for all control/data endpoints, accept only runtime credentials at the bridge endpoint, and reject cross-role token use.
-- [ ] Implement the HTTP contract above. Snapshot endpoints include no secrets or raw native transcripts. Translate validation/conflict/runtime errors to structured, sanitized responses.
-- [ ] Test bridge sender spoofing, expired generation, repeated call IDs with different bodies, unexpected Origin/Host, missing Authorization, invalid JSON and busy configuration edits. A reused idempotency key with different content must return a conflict, not silently acknowledge altered content.
-- [ ] Implement owner credentials held in server memory and separate random runtime credentials bound to active delivery/generation. Never pass the owner credential into child environment variables. Persist no raw credentials in SQLite.
-- [ ] Implement loopback CLI startup, data-directory lock, explicit Pi executable override, private data-directory permissions and graceful service shutdown. Default to port 8765; fail clearly if unavailable. Print a fragment-authenticated local URL; never enable uvicorn auto-reload during self-development.
-- [ ] Serve packaged static assets and resolve the packaged extension path independently of current working directory.
+- [x] Write tests against an app factory injecting a test backend and temporary Store. Require owner authentication for all control/data endpoints, accept only runtime credentials at the bridge endpoint, and reject cross-role token use.
+- [x] Implement the HTTP contract above. Snapshot endpoints include no secrets or raw native transcripts. Translate validation/conflict/runtime errors to structured, sanitized responses.
+- [x] Test bridge sender spoofing, expired generation, repeated call IDs with different bodies, unexpected Origin/Host, missing Authorization, invalid JSON and busy configuration edits. A reused idempotency key with different content must return a conflict, not silently acknowledge altered content.
+- [x] Implement owner credentials held in server memory and separate random runtime credentials bound to active delivery/generation. Never pass the owner credential into child environment variables. Persist no raw credentials in SQLite.
+- [x] Implement loopback CLI startup, data-directory lock, explicit Pi executable override, private data-directory permissions and graceful service shutdown. Default to port 8765; fail clearly if unavailable. Print a fragment-authenticated local URL; never enable uvicorn auto-reload during self-development.
+- [x] Serve packaged static assets and resolve the packaged extension path independently of current working directory.
 - [ ] Run `uv run pytest tests/test_api.py tests/test_security.py tests/test_packaging.py -q` and the earlier suites. Commit after review.
 
 ## Task 6: first-run department setup and shared room UI
@@ -267,24 +269,24 @@ Before implementing harness integration, read the relevant installed docs/exampl
 
 Visual direction: a quiet studio workbench, not an enterprise dashboard or marketing landing page. Cool silver background `#eef2f6`, white work surfaces `#ffffff`, ink `#203044`, muted text `#566779`, teal action `#12675d`, warning `#9a4523`. A narrow department roster and wide conversation area encode the actual interaction; stack on mobile. The signature is user-named department nameplates with stable identity colors and explicit recipient labels. Use local/system font stacks, no CDN dependency, restrained nested surfaces, subtle custom-eased focus/entry transitions and reduced-motion support. Avoid fabricated statistics, hard-coded example departments and unnecessary navigation.
 
-- [ ] Start a test-only server with deterministic backend metadata, and write a browser test that expects the empty “Name your first department” state. Run it before building the UI and observe the missing interface.
-- [ ] Implement the static shell and create/edit form: name, handle, role, workspace, model selection, enabled and Discuss/Develop controls. No automatic department creation or first model selection. Model listing is an explicit action using the chosen workspace.
-- [ ] Add a browser test creating `星图 Studio / @atlas` and `Canvas / @canvas`, assigning different roles/models; rename the first to `Foundry / @forge` and assert ID/session continuity through API state.
-- [ ] Implement one-second snapshot reconciliation without replacing focused inputs or erasing an unsent draft. Stop overlapping polls, handle reconnect and retain scroll position unless the user is already at the newest message.
-- [ ] Implement human composer mention preview using handles, with server-authoritative validation. Display original sender snapshots, current roster names, recipient labels and delivery status separately. Render messages as text, not executable HTML.
-- [ ] Test that sending `@forge` dispatches to the renamed department, an unknown old handle is rejected, unaddressed posts do not start work, and text resembling HTML is displayed literally.
-- [ ] Implement pause/resume and visible stopping/failure/limit notices. Confirm Develop mode with an explicit local-access warning; never imply it is sandboxed.
-- [ ] Verify keyboard labels, focus visibility, modal focus/close, mobile layout and reduced motion. Capture desktop/mobile screenshots and review actual rendered output.
-- [ ] Use the webapp-testing helper through uv. First run `uv run python /home/zengma/.claude/skills/webapp-testing/scripts/with_server.py --help`; then use its documented server lifecycle options with the test server and `uv run pytest -m browser`. Because the UI polls, wait for a stable visible state rather than an unbounded network-idle wait.
+- [x] Start a test-only server with deterministic backend metadata, and write a browser test that expects the empty “Name your first department” state. Run it before building the UI and observe the missing interface.
+- [x] Implement the static shell and create/edit form: name, handle, role, workspace, model selection, enabled and Discuss/Develop controls. No automatic department creation or first model selection. Model listing is an explicit action using the chosen workspace.
+- [x] Add a browser test creating `星图 Studio / @atlas` and `Canvas / @canvas`, assigning different roles/models; rename the first to `Foundry / @forge` and assert ID/session continuity through API state.
+- [x] Implement one-second snapshot reconciliation without replacing focused inputs or erasing an unsent draft. Stop overlapping polls, handle reconnect and retain scroll position unless the user is already at the newest message.
+- [x] Implement human composer mention preview using handles, with server-authoritative validation. Display original sender snapshots, current roster names, recipient labels and delivery status separately. Render messages as text, not executable HTML.
+- [x] Test that sending `@forge` dispatches to the renamed department, an unknown old handle is rejected, unaddressed posts do not start work, and text resembling HTML is displayed literally.
+- [x] Implement pause/resume and visible stopping/failure/limit notices. Confirm Develop mode with an explicit local-access warning; never imply it is sandboxed.
+- [x] Verify keyboard labels, focus visibility, modal focus/close, mobile layout and reduced motion. Capture desktop/mobile screenshots and review actual rendered output.
+- [x] Use the webapp-testing helper through uv. First run `uv run python /home/zengma/.claude/skills/webapp-testing/scripts/with_server.py --help`; then use its documented server lifecycle options with the test server and `uv run pytest -m browser`. Because the UI polls, wait for a stable visible state rather than an unbounded network-idle wait.
 - [ ] Run browser and Python suites; commit after review.
 
 ## Task 7: end-to-end verification, packaging and operator documentation
 
 **Create/update:** `README.md`, `docs/verification.md`, packaging tests and this plan's progress checkboxes.
 
-- [ ] Add an integration test where the fake RPC child uses the real authenticated bridge HTTP endpoint, producing an addressed post and a second department reply. This verifies the actual transport/application path while explicitly remaining a synthetic inference test.
-- [ ] Add service-restart and browser-reconnect tests proving configuration, immutable message attribution and paused recovery survive. Ensure two leads sharing a repository never reuse the same conversation ID.
-- [ ] Run fresh verification:
+- [x] Add an integration test where the fake RPC child uses the real authenticated bridge HTTP endpoint, producing an addressed post and a second department reply. This verifies the actual transport/application path while explicitly remaining a synthetic inference test.
+- [x] Add service-restart and browser-reconnect tests proving configuration, immutable message attribution and paused recovery survive. Ensure two leads sharing a repository never reuse the same conversation ID.
+- [x] Run fresh verification:
 
 ```bash
 uv sync --locked
@@ -298,12 +300,12 @@ uv build
 
 Expected: all selected checks pass; browser tests do not silently skip missing dependencies. Install Chromium with `uv run playwright install chromium` if needed and permitted, or report the precise browser blocker.
 
-- [ ] Verify the wheel contains static files and the extension; smoke-test its CLI from a temporary directory in a uv-managed environment, without inference.
-- [ ] If available, perform a no-prompt installed-Pi RPC handshake with unrelated extensions/MCP disabled, then shut down. Record exact Pi version and command/event support. Do not treat this as a live collaboration demonstration.
-- [ ] Document `uv sync --locked`, `uv run department-studio`, the local launch URL, user-named setup, model configuration errors, Discuss/Develop access, pause/recovery behavior and data location.
-- [ ] Document the live acceptance path with user-selected names/models; require explicit permission before calls. Separate “automated tests,” “installed Pi handshake,” and “live multi-model collaboration” evidence. If the last has not run, say so prominently.
+- [x] Verify the wheel contains static files and the extension; smoke-test its CLI from a temporary directory in a uv-managed environment, without inference.
+- [x] If available, perform a no-prompt installed-Pi RPC handshake with unrelated extensions/MCP disabled, then shut down. Record exact Pi version and command/event support. Do not treat this as a live collaboration demonstration.
+- [x] Document `uv sync --locked`, `uv run department-studio`, the local launch URL, user-named setup, model configuration errors, Discuss/Develop access, pause/recovery behavior and data location.
+- [x] Document the live acceptance path with user-selected names/models; require explicit permission before calls. Separate “automated tests,” “installed Pi handshake,” and “live multi-model collaboration” evidence. If the last has not run, say so prominently.
 - [ ] Obtain final spec-compliance review, then quality review; fix important findings with regression tests. Run the complete relevant checks again after fixes.
-- [ ] Summarize verified behavior, remaining live checks, launch instructions and source paths. Do not start self-editing agents or push to a remote without user direction.
+- [x] Summarize verified behavior, remaining live checks, launch instructions and source paths. Do not start self-editing agents or push to a remote without user direction.
 
 ## Execution order and review gates
 
@@ -322,10 +324,10 @@ Every task uses red → green → review. First review requirements, then qualit
 
 ## Progress
 
-- [ ] Task 1 — uv foundation and configuration
-- [ ] Task 2 — department identity and transactional storage
-- [ ] Task 3 — scheduling and stop lifecycle
-- [ ] Task 4 — Pi adapter and bridge
-- [ ] Task 5 — API, security and launcher
-- [ ] Task 6 — browser UI
-- [ ] Task 7 — integrated verification and documentation
+- [x] Task 1 — uv foundation and configuration
+- [x] Task 2 — department identity and transactional storage
+- [x] Task 3 — scheduling and stop lifecycle
+- [x] Task 4 — Pi adapter and bridge
+- [x] Task 5 — API, security and launcher
+- [x] Task 6 — browser UI
+- [x] Task 7 — integrated verification and documentation

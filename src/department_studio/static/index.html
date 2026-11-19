@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Department Studio</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="studio">
+    <header class="masthead">
+      <div class="brand"><span class="studio-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div><h1>Department Studio</h1><p>A shared room, led by you.</p></div>
+      </div>
+      <div class="presence"><span class="connection-dot" aria-hidden="true"></span>
+        <span id="connection" role="status">Connecting…</span><span class="owner-label">You · project lead</span>
+      </div>
+    </header>
+
+    <section class="access-notice" id="access-notice" hidden role="alert">
+      <strong>Open the launch URL from your terminal.</strong>
+      <p>It gives this tab access to your local room. A new server launch needs a new URL.</p>
+    </section>
+
+    <main class="workbench">
+      <aside class="departments surface" aria-labelledby="departments-title">
+        <div class="panel-heading"><div><span class="eyebrow">Your team</span><h2 id="departments-title">Departments</h2></div>
+          <span id="lead-count" class="count">0</span>
+        </div>
+        <div id="roster-empty" class="roster-empty">
+          <span class="empty-nameplate" aria-hidden="true">Aa<span>+</span></span>
+          <h3>Name your first department</h3>
+          <p>Choose its role, model and workspace. Build a team that fits your project.</p>
+        </div>
+        <div id="roster" class="roster"></div>
+        <button id="add-department" class="add-department" type="button" disabled><span aria-hidden="true">+</span> Add department</button>
+        <div class="roster-footer"><span class="eyebrow">Start with a conversation</span>
+          <p>Each department has its own conversation. Only addressed requests start work.</p>
+        </div>
+      </aside>
+
+      <section class="room surface" aria-labelledby="room-title">
+        <div class="room-heading">
+          <div><span class="eyebrow">One shared space</span><h2 id="room-title">Project room</h2></div>
+          <span id="room-state" class="state-pill">Room paused</span>
+        </div>
+        <div class="room-control">
+          <div><p id="control-status">Waiting for the local service.</p>
+            <span id="control-description">You choose when departments can work.</span>
+          </div>
+          <button id="resume" class="primary compact" type="button" disabled>Resume room</button>
+          <button id="pause" class="stop compact" type="button" hidden>Pause &amp; stop</button>
+        </div>
+        <div id="control-error" class="inline-error control-error" role="alert" hidden></div>
+
+        <div id="conversation" class="conversation" role="log" aria-label="Shared room messages" aria-live="polite">
+          <div id="room-empty" class="room-empty">
+            <div class="conversation-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+            <h3>The shared room starts here</h3>
+            <p>Share context with your team.<br>Use a department’s <strong>@handle</strong> when you want a response.</p>
+            <span class="quiet-label">Your messages stay here when you reconnect.</span>
+          </div>
+          <div id="messages"></div>
+        </div>
+
+        <form id="composer" class="composer">
+          <label for="message-text" class="composer-label">Message to the room</label>
+          <textarea id="message-text" rows="3" maxlength="32000" placeholder="Share a thought, or @mention a department…" required></textarea>
+          <div id="recipient-preview" class="recipient-preview" aria-live="polite">Public note · no department will be notified</div>
+          <div id="composer-error" class="inline-error" role="alert" hidden></div>
+          <div class="composer-actions"><span><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Enter</kbd> to send</span>
+            <button id="send" class="primary" type="submit" disabled>Send message</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <footer class="page-footer"><span>Local workspace · Pi runtime</span><span>You set the scope. Departments collaborate within it.</span></footer>
+  </div>
+
+  <dialog id="lead-dialog" aria-labelledby="dialog-title">
+    <form id="lead-form">
+      <div class="dialog-heading"><div><span class="eyebrow">Department settings</span><h2 id="dialog-title">New department</h2></div>
+        <button id="close-dialog" type="button" class="icon-button" aria-label="Close department settings">×</button>
+      </div>
+      <p class="dialog-intro">Give this lead a purpose and a place to work.</p>
+      <div class="form-grid">
+        <label>Department name<input id="lead-name" name="name" maxlength="80" autocomplete="off" required autofocus></label>
+        <label>Handle<span class="handle-field"><span aria-hidden="true">@</span><input id="lead-handle" name="handle" aria-label="Handle" maxlength="32" pattern="[a-zA-Z][a-zA-Z0-9_-]{0,31}" autocomplete="off" required></span></label>
+      </div>
+      <label>Role and instructions<textarea id="lead-role" name="role" rows="3" maxlength="8000" required></textarea></label>
+      <label>Workspace directory<input id="lead-workspace" name="workspace" autocomplete="off" required></label>
+      <p class="field-help">Choose an existing local directory. Its AGENTS.md instructions are included. A changed directory starts a fresh native conversation.</p>
+      <div class="model-heading"><span class="eyebrow">Runtime · Pi</span><button id="load-models" type="button" class="secondary compact">Load models</button></div>
+      <label>Model<select id="lead-model" name="model" aria-label="Model" required disabled><option value="">Choose a workspace, then load models</option></select></label>
+      <p id="model-help" class="field-help">Uses your existing Pi provider configuration. Listing a model does not verify its connection.</p>
+
+      <fieldset class="permissions"><legend>Tool access</legend>
+        <div class="permission-options">
+          <label><input type="radio" name="permission" value="discuss" aria-label="Discuss" checked><span><strong>Discuss</strong><small>Read, search, list and room messages</small></span></label>
+          <label><input type="radio" name="permission" value="develop" aria-label="Develop"><span><strong>Develop</strong><small>Add editing, writing and shell</small></span></label>
+        </div>
+        <p class="field-help">Tools use your local account. A workspace path is not a security sandbox.</p>
+        <div id="develop-warning" class="develop-warning" hidden>
+          <p>These tools run with your local account's access. Enable them only for work you explicitly request. Review changes before applying them to the running app.</p>
+          <label id="consent-label" class="check-label"><input type="checkbox" id="develop-consent">I allow local editing, writing and shell for this department.</label>
+        </div>
+      </fieldset>
+      <label class="check-label availability"><input type="checkbox" id="lead-enabled" checked>Available for addressed requests</label>
+      <div id="form-error" class="inline-error" role="alert" hidden></div>
+      <div class="dialog-actions"><button id="cancel-dialog" class="secondary" type="button">Cancel</button>
+        <button id="save-department" class="primary" type="submit">Save department</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
