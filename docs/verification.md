@@ -74,7 +74,9 @@ pi --mode rpc --no-approve --no-extensions --no-mcp --no-skills
 
 The bridge case also supplied an explicit `-e` path to the copied extension. Both processes accepted `get_state`, `get_available_models`, `clear_queue` and `abort`, reported idle with zero pending messages, and exited with confirmation. The extension emitted `department-studio-bridge-ready-v1`, confirming registration from the copied path.
 
-**The installed runtime returned zero available models under this policy.** No provider credentials were displayed or changed. A supported provider must be configured and authenticated before live acceptance. Providers available only through auto-loaded Pi extensions are excluded by the approved bootstrap resource policy.
+**The installed runtime returned zero available models under this policy.** Follow-up live-demo preparation found that QGenie is already configured. Both inspected Pi settings files name `qgenie / azure::gpt-6-luna` as their saved default. Explicit probes against both agent directories still returned an empty list and a placeholder model; filtered native diagnostics identified `EROFS` while creating the `settings.json` lock. Both directories were confirmed to be mounted read-only in this coding session. The empty list therefore does not establish missing provider configuration or bad credentials. Recheck model discovery from the user's normal terminal with the intended `PI_CODING_AGENT_DIR`; see `live-demo.md`.
+
+No provider credentials were displayed or changed. Providers available only through auto-loaded Pi extensions remain excluded by the approved bootstrap resource policy; enabling unrelated extensions was not used to troubleshoot QGenie.
 
 No `prompt` command was sent to installed Pi. This handshake does not verify provider inference, live `agent_settled` events, real lead-to-lead model reasoning or development tool execution. Their transport/lifecycle handling is covered by deterministic fixtures and the installed Pi references.
 
@@ -106,6 +108,17 @@ Worker startup failed before any worker completed a task or review:
 The user explicitly authorized **“Continue TDD here and report the missing independent reviews.”** Direct implementation continued under that instruction. No per-task independent spec or quality review, nor final independent spec or quality review, is claimed. Per-task review/commit gates remain unchecked in the plan; implementation is consolidated in a local commit for review.
 
 ## Remaining live acceptance
+
+The user selected live-demo preparation as the next step. The production server
+was checked with a separate `.department-studio/live-demo` data directory. Its
+authenticated state endpoint confirmed an empty, paused room. A Playwright check
+verified fragment authentication, the empty setup screen, Discuss as the default,
+and model loading with no mutating HTTP requests or browser errors. The rendered
+setup was inspected in git-ignored `artifacts/live-demo-setup.png`. The empty model
+list was traced to the read-only configuration failure described above. No prompt
+was sent. The temporary server was stopped so the user can launch from their normal
+terminal. The concrete QGenie setup and conversation sequence is in `live-demo.md`;
+all live-inference checks below remain pending.
 
 After the user chooses and configures real models and explicitly authorizes inference:
 

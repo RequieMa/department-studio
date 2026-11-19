@@ -6,6 +6,10 @@ This is the communication bootstrap described in `docs/superpowers/specs/2026-11
 
 **Live model-backed collaboration has not been demonstrated.** Automated replies are explicitly synthetic test fixtures. Independent subagent spec and quality reviews were unavailable; the user authorized continuing TDD directly. See `docs/verification.md` for evidence and remaining checks.
 
+For the prepared two-department live demonstration, follow `docs/live-demo.md`.
+It covers provider readiness, user-chosen setup, the explicit peer-request prompt,
+and the evidence needed before calling the demonstration successful.
+
 ## Run locally
 
 Install `uv` and configure the external Pi runtime. The bootstrap currently targets POSIX hosts and was verified on Linux. This implementation was checked against Pi **1.5.2**, including a no-prompt RPC and bridge-registration handshake. The adapter requires the documented `agent_settled`, `clear_queue`, `abort`, explicit session IDs, and resource-disable options.
@@ -35,7 +39,7 @@ Use the exact printed address: other Host headers and browser origins are reject
 3. Click **Load models**, then explicitly select a provider/model pair. There is no default model selection. Model listing requests metadata without sending a model prompt.
 4. Save with **Discuss**, the default tool mode. Add further departments as needed, then resume the room when ready to send addressed work.
 
-Studio reuses Pi's configured providers and credentials; it has no key editor or provider login screen. If no models appear, configure/authenticate the desired provider in Pi and load the list again. The installed-Pi verification reported **zero available models under the bootstrap launch policy**. A listed model can still fail at inference time, and Studio reports that failure without substituting another model.
+Studio reuses Pi's configured providers and credentials; it has no key editor or provider login screen. If no models appear, first check that Studio and your Pi TUI use the same `PI_CODING_AGENT_DIR` and that Pi can create configuration locks there. The initial empty model list in this coding environment was traced to read-only Pi configuration directories (`EROFS`); QGenie was already configured. Follow `docs/live-demo.md` to launch with the inspected QGenie configuration from your normal terminal. A listed model can still fail at inference time, and Studio reports that failure without substituting another model.
 
 Auto-loaded extensions, MCP servers, skills, prompt templates, themes and context discovery are disabled. Only Studio's bridge extension is loaded. Providers supplied exclusively by other Pi extensions are therefore unavailable under this policy; use a supported configured provider instead. `--offline` suppresses unrelated discovery/update traffic; it does not make model inference offline.
 
