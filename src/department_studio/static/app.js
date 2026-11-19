@@ -17,9 +17,12 @@ let editing = null;
 let saving = false;
 let modelOptions = new Map();
 let modelRequest = null;
+let folderRequest = null;
+let folderListing = null;
 const rosterNodes = new Map();
 const messageNodes = new Map();
 const dialog = $("#lead-dialog");
+const folderDialog = $("#folder-dialog");
 
 function text(node, value) {
   const content = String(value ?? "");
@@ -291,13 +294,95 @@ function updatePermission() {
 
 $("#add-department").addEventListener("click", () => openDepartment());
 for (const id of ["close-dialog", "cancel-dialog"]) $(`#${id}`).addEventListener("click", () => dialog.close());
-dialog.addEventListener("close", () => modelRequest?.abort());
+dialog.addEventListener("close", () => {
+  modelRequest?.abort();
+  if (folderDialog.open) folderDialog.close();
+});
 document.querySelectorAll('input[name="permission"]').forEach((input) => input.addEventListener("change", updatePermission));
 $("#develop-consent").addEventListener("change", updatePermission);
 $("#lead-workspace").addEventListener("input", () => {
   modelRequest?.abort();
   resetModels("Load models for this workspace");
 });
+
+function renderFolders() {
+  if (!folderListing) return;
+  const query = $("#folder-filter").value.trim().toLocaleLowerCase();
+  const folders = folderListing.folders.filter((folder) => folder.name.toLocaleLowerCase().includes(query));
+  const items = document.createDocumentFragment();
+  for (const folder of folders) {
+    const item = element("li");
+    const open = element("button", "folder-entry");
+    open.type = "button";
+    open.setAttribute("aria-label", `Open ${folder.name}`);
+    const icon = element("span", "folder-icon");
+    icon.setAttribute("aria-hidden", "true");
+    const arrow = element("span", "folder-arrow", "›");
+    arrow.setAttribute("aria-hidden", "true");
+    open.append(icon, element("span", "folder-name", folder.name), arrow);
+    open.addEventListener("click", () => browseFolders(folder.path));
+    item.append(open);
+    items.append(item);
+  }
+  $("#folder-list").replaceChildren(items);
+  text($("#folder-status"), folders.length ? `${folders.length} folder${folders.length === 1 ? "" : "s"}` :
+    query ? "No matching folders." : "No subfolders. You can choose this folder.");
+}
+
+async function browseFolders(path) {
+  folderRequest?.abort();
+  const controller = new AbortController();
+  folderRequest = controller;
+  folderListing = null;
+  $("#select-folder").disabled = true;
+  $("#folder-up").disabled = true;
+  $("#folder-filter").value = "";
+  $("#folder-list").replaceChildren();
+  text($("#folder-location"), path || "Project folder");
+  text($("#folder-status"), "Loading folders…");
+  notice("#folder-error");
+  try {
+    const data = await request(path === undefined ? "/api/folders" : `/api/folders?path=${encodeURIComponent(path)}`, { signal: controller.signal });
+    if (!folderDialog.open || controller.signal.aborted) return;
+    folderListing = data;
+    text($("#folder-location"), data.path);
+    $("#folder-up").disabled = data.parent === null;
+    $("#select-folder").disabled = false;
+    renderFolders();
+    $("#folder-filter").focus();
+  } catch (error) {
+    if (!folderDialog.open || controller.signal.aborted) return;
+    notice("#folder-error", error.message);
+    text($("#folder-status"), "Choose Home or Project folder to browse again.");
+  }
+}
+
+$("#browse-workspace").addEventListener("click", () => {
+  folderDialog.showModal();
+  browseFolders($("#lead-workspace").value || undefined);
+});
+$("#folder-home").addEventListener("click", () => browseFolders("~"));
+$("#folder-project").addEventListener("click", () => browseFolders());
+$("#folder-up").addEventListener("click", () => {
+  if (folderListing?.parent) browseFolders(folderListing.parent);
+});
+$("#folder-filter").addEventListener("input", renderFolders);
+for (const id of ["close-folder-dialog", "cancel-folder"]) $(`#${id}`).addEventListener("click", () => folderDialog.close());
+folderDialog.addEventListener("close", () => {
+  folderRequest?.abort();
+  folderListing = null;
+  if (dialog.open) $("#browse-workspace").focus();
+});
+$("#select-folder").addEventListener("click", () => {
+  if (!folderListing || $("#select-folder").disabled) return;
+  const workspace = $("#lead-workspace");
+  if (workspace.value !== folderListing.path) {
+    workspace.value = folderListing.path;
+    workspace.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  folderDialog.close();
+});
+
 $("#load-models").addEventListener("click", async () => {
   const workspace = $("#lead-workspace").value.trim();
   if (!workspace) { notice("#form-error", "Choose a workspace directory first."); return; }

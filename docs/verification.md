@@ -8,21 +8,33 @@ The original repository's Git metadata was read-only, so implementation used an 
 
 ## Automated results
 
-The final application checks passed after the regression fixes below:
+The application checks passed after the regression fixes below, including the
+workspace folder picker. The Node bridge tests and CLI/HTTP wheel smoke results
+are retained from the earlier bootstrap verification; those implementations did
+not change in this increment.
 
 | Check | Result |
 |---|---|
 | `uv sync --locked` | Passed; environment matches `uv.lock` |
-| `uv run ruff check .` | Passed |
-| `uv run ruff format --check .` | Passed |
-| `uv run pytest -q` | **128 passed**, 3 browser tests deselected |
+| `uv run --locked ruff check .` | Passed |
+| `uv run --locked ruff format --check .` | Passed; 33 Python files formatted |
+| `uv run --locked pytest -q` | **137 passed**, 5 browser tests deselected |
 | `node --test tests/test_bridge_extension.mjs` | **6 passed** |
-| `uv run pytest -m browser -q` | **3 passed**, 128 ordinary tests deselected; no missing-dependency skips |
+| `node --check src/department_studio/static/app.js` | Passed |
+| `uv run --locked pytest -m browser tests/test_browser.py -q` | **5 passed**; no missing-dependency skips |
 | `uv build` | Built source distribution and wheel |
+| Wheel contents | Current folder-listing module, static UI assets and Pi bridge match their source files |
 | Wheel smoke tests | Static assets and bridge included; CLI help and authenticated HTTP launch work outside the repository in a uv-managed environment; unavailable ports fail clearly |
 | Git whitespace check | Passed |
 
 Verification used uv-managed Python 3.12.13, Node 22.22.3 and headless Chromium 159.0.8154.6 on Linux. Project dependencies are pinned in `uv.lock`.
+
+An ordinary-suite run concurrent with Chromium completed 137 tests but reported
+one teardown error in
+`test_split_utf8_crlf_unicode_separators_and_correlated_ids`: fixture process
+cleanup exceeded its 0.3-second stop deadline. The same test passed alone, then
+the entire ordinary suite passed without Chromium running (137 passed in
+22.00 seconds). No RPC lifecycle code or timeout was changed for the picker.
 
 The ordinary suite covers:
 
@@ -33,6 +45,7 @@ The ordinary suite covers:
 - Strict JSONL framing, split UTF-8/CRLF records, Unicode separators, correlated responses, malformed output, EOF, stderr draining, startup failure, prompt rejection and delayed settling.
 - Exact Pi model/session verification, distinct per-lead sessions, permission-specific tool flags, disabled resource discovery, mandatory bridge readiness, metadata-only enumeration and private-content exclusion.
 - Browser versus runtime authorization, sender spoofing, Host/Origin validation, safe error responses, stale generations, optimistic edits and paused restart recovery.
+- Owner-only directory listing, hidden and Unicode folder names, canonical symlink targets, empty folders, root navigation, invalid paths and sanitized access errors. Files are excluded and listing does not start a runtime.
 - A fake Pi subprocess using the real authenticated HTTP bridge to address a second lead, whose final response completes the same persisted chain. This uses real subprocess/HTTP/SQLite paths with **synthetic inference**.
 - Actual fixture-process cancellation through the room service, including adapter bookkeeping and temporary bridge-copy cleanup.
 
@@ -44,18 +57,27 @@ The browser suite creates `星图 Studio / @atlas` and `Canvas / @canvas` with i
 
 A separate browser case verifies that an uncertain recovered execution is not labeled confirmed idle. This case injects the recovered HTTP snapshot; storage/restart behavior is verified separately by the ordinary suite.
 
+Two folder-picker cases navigate real directories, choose an empty Unicode
+workspace, filter names and render HTML-like names literally. They check that
+Cancel preserves the workspace/model, selecting a different workspace resets the
+model, saving preserves the lead ID while starting a fresh conversation, and
+mobile error recovery and Escape restore focus. The existing configuration tests
+also select workspaces through the picker.
+
 Desktop and mobile screenshots were captured and visually inspected:
 
 - `artifacts/empty-desktop.png`
 - `artifacts/room-desktop.png`
 - `artifacts/room-mobile.png`
+- `artifacts/folder-picker-desktop.png`
+- `artifacts/folder-picker-mobile.png`
 
 The artifacts are git-ignored and contain synthetic test conversations. Browser tests used the installed webapp-testing lifecycle helper:
 
 ```bash
-uv run python /home/zengma/.claude/skills/webapp-testing/scripts/with_server.py \
-  --server 'uv run python -m tests.browser_server' --port 8766 \
-  -- uv run pytest -m browser -q
+uv run --locked python /home/zengma/.claude/skills/webapp-testing/scripts/with_server.py \
+  --server 'uv run --locked python -m tests.browser_server' --port 8766 \
+  -- uv run --locked pytest -m browser tests/test_browser.py -q
 ```
 
 Within the restricted development environment, uv's cache and interpreter-install directories were under `/tmp`, `UV_LINK_MODE=copy` was set, and Chromium was installed under `/tmp/department-studio-playwright`. Standard commands in the README can use the operator's normal writable uv/Playwright directories.
@@ -94,6 +116,18 @@ Tests were run failing before implementing configuration, domain/storage, schedu
 - A short stop deadline must not prematurely fail slow startup. A combined subprocess/browser run exposed the timing problem; a deterministic slow-start regression reproduced it. Startup now uses its RPC deadline.
 - Bridge edits during self-development must not be picked up by a running server. Each delivery loads a private copy of the bytes captured at service startup.
 - An empty workspace must be rejected instead of implicitly selecting the server's working directory.
+
+For the folder-picker follow-up, eight API tests first failed with missing-route
+404 responses, and two browser tests first failed because the Browse folders
+control was absent. After implementation the API file passed all 23 tests and
+the browser file passed all five tests. The picker preserves department drafts,
+uses the existing owner authentication and Host/Origin checks, and cancels stale
+navigation requests. Directory access runs outside the async event loop.
+
+`docs/sample-conversation.md` now provides copyable prompts for an ordinary note,
+one lead-to-lead handoff and a summary back to the human. Replies are labeled as
+illustrative examples. The document asks the user to substitute their own handles
+and select models; it does not seed departments, send messages or invoke models.
 
 The controller checked the implementation against the approved spec and reviewed the code and rendered UI. These checks do not replace the missing independent reviews.
 

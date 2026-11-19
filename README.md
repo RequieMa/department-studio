@@ -35,7 +35,7 @@ Use the exact printed address: other Host headers and browser origins are reject
 ## Configure departments
 
 1. Choose **Add department**. Enter any display name, a unique handle, and the department's role/instructions. Names support Unicode. Handles use lowercase letters, digits, `_` and `-`; `all`, `you` and `system` are reserved.
-2. Choose an existing local workspace directory. Studio canonicalizes it and deliberately includes that directory's root `AGENTS.md`. It does not clone repositories or create worktrees.
+2. Click **Browse folders**, navigate to an existing local directory, and choose **Use this folder**. The picker browses folders on the machine running Studio and includes Home, Project folder, parent navigation and a name filter. Studio fills the workspace path and deliberately includes that directory's root `AGENTS.md`. It does not clone repositories or create worktrees.
 3. Click **Load models**, then explicitly select a provider/model pair. There is no default model selection. Model listing requests metadata without sending a model prompt.
 4. Save with **Discuss**, the default tool mode. Add further departments as needed, then resume the room when ready to send addressed work.
 
@@ -46,6 +46,10 @@ Auto-loaded extensions, MCP servers, skills, prompt templates, themes and contex
 Edits to settings require the department to have no queued, running or stopping delivery. Renaming preserves its ID and native conversation; old room messages retain their original labels. Changing workspaces creates a fresh native session while preserving room history and prior session references.
 
 ## Work in the room
+
+For a copyable two-department example, see the [sample conversation](docs/sample-conversation.md). It
+includes an ordinary note, a lead-to-lead request and a summary back to you;
+illustrative replies are clearly separated from real model output.
 
 An unaddressed message is a public note. Use `@handle` to request a response, or `@all` to address every enabled department. The composer previews recipients; the server validates them again. Messages sent while paused remain public and are not replayed when you resume.
 

@@ -49,7 +49,8 @@ launch credentials and native sessions out of this document and source control.
 
 ## Load the existing QGenie models
 
-In Studio, click **Add department**, enter the chosen workspace and click
+In Studio, click **Add department**, select a workspace with **Browse folders**,
+choose **Use this folder**, and click
 **Load models**. Listing is a metadata request, not a model prompt. Choose the
 exact provider/model you want; the saved TUI default is useful context, not an
 automatic choice for either department. A live request still needs your model
@@ -69,7 +70,7 @@ must show that failure without substituting a different model.
 ## Configure the two departments
 
 For each department, enter your own name, unique handle, role and exact model.
-Select **Discuss** and save. Both leads may use
+Choose the workspace with **Browse folders**, select **Discuss**, and save. Both leads may use
 `/home/zengma/department-studio/.worktrees/bootstrap` to discuss the implemented
 project, or another existing workspace you explicitly choose. Select separate
 workspaces before any later concurrent editing.
@@ -79,6 +80,9 @@ no model is selected automatically. Roles are independent of names. There is no
 need to enable Develop for this demonstration.
 
 ## Send one explicit collaboration request
+
+For a fuller example with an opening note, a peer handoff, illustrative replies
+and a summary back to the human, see the [sample conversation](sample-conversation.md).
 
 Sending the following request starts live inference with the models you selected.
 If an assistant is operating the demo for you, explicitly authorize that bounded

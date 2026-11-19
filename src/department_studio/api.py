@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +14,7 @@ from department_studio.backends.base import AgentBackend
 from department_studio.backends.pi import PiBackend
 from department_studio.config import DataDirectory, Settings
 from department_studio.domain import Conflict, Invalid, LeadCreate, NotFound, workspace_path
+from department_studio.folders import browse_folders
 from department_studio.security import OwnerCredential, allowed_request
 from department_studio.service import RoomService
 from department_studio.store import Store
@@ -160,6 +161,10 @@ def create_app(
     @app.get("/api/state")
     async def state():
         return app.state.store.snapshot()
+
+    @app.get("/api/folders")
+    def folders(path: str | None = Query(default=None, max_length=4096)):
+        return browse_folders(path)
 
     @app.get("/api/models")
     async def models(workspace: str):

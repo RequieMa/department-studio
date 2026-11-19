@@ -140,6 +140,24 @@ dialog::backdrop { background: #20304465; backdrop-filter: blur(2px); }
 .handle-field { display: flex; border: 1px solid #becbd6; border-radius: 7px; align-items: center; padding-left: 10px; font-weight: 400; }
 .handle-field > span { color: var(--muted); }.handle-field input { border: 0; min-width: 0; }
 .field-help { color: var(--muted); font-size: 11px; line-height: 1.7; margin: -7px 0 15px; }
+.workspace-setting { margin-bottom: 15px; }
+.workspace-setting > label, .folder-filter-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 7px; }
+.workspace-field { display: flex; align-items: center; gap: 9px; }
+.workspace-field input { min-width: 0; background: #f8fafc; font-size: 12px; text-overflow: ellipsis; }
+.workspace-field button { flex-shrink: 0; }
+#folder-dialog { width: min(640px, calc(100vw - 24px)); }
+.folder-toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.folder-location { background: #f4f7fa; border: 1px solid var(--line); border-radius: 7px; padding: 11px 12px; margin: 12px 0 18px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.folder-status { color: var(--muted); font-size: 11px; line-height: 1.7; margin: 12px 0 8px; }
+#folder-error { margin-top: 12px; }
+.folder-list { list-style: none; padding: 0; margin: 0; max-height: min(320px, 35dvh); min-height: 60px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.folder-entry { display: flex; align-items: center; gap: 12px; background: white; border: 0; border-radius: 6px; width: 100%; min-height: 43px; padding: 10px 12px; text-align: left; color: var(--ink); }
+.folder-entry:hover, .folder-entry:focus-visible { background: var(--teal-soft); }
+.folder-entry:focus-visible { outline-offset: -3px; }
+.folder-icon { position: relative; width: 19px; height: 14px; border: 1.5px solid #538b80; border-radius: 2px; background: #edf6f3; flex-shrink: 0; }
+.folder-icon::before { content: ""; position: absolute; width: 8px; height: 4px; top: -5px; left: -1.5px; border: 1.5px solid #538b80; border-bottom: 0; border-radius: 2px 2px 0 0; background: #edf6f3; }
+.folder-name { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; min-width: 0; }
+.folder-arrow { color: var(--muted); margin-left: auto; font-size: 20px; flex-shrink: 0; }
 .model-heading { margin: 17px 0 9px; }
 .model-heading .eyebrow { margin: 0; }
 fieldset { border: 0; margin: 21px 0 10px; padding: 0; min-width: 0; }
@@ -178,5 +196,6 @@ legend { font-size: 12px; font-weight: 600; margin-bottom: 10px; padding: 0; }
   .composer-actions > span { font-size: 9px; }.primary { padding-inline: 13px; }.page-footer { align-items: flex-start; line-height: 1.6; }
   .page-footer span:last-child { max-width: 155px; text-align: right; }dialog { padding: 23px 20px; max-height: calc(100dvh - 24px); }
   .form-grid { gap: 10px; }.permission-options { gap: 8px; }.permission-options > label { gap: 7px; padding: 10px 8px; }
+  .workspace-field { flex-wrap: wrap; }.workspace-field button { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

@@ -1,5 +1,7 @@
 import json
+import os
 from dataclasses import asdict
+from pathlib import Path
 
 import httpx
 import pytest
@@ -72,6 +74,7 @@ async def test_first_run_empty_paused_and_user_configuration_persists(http_app, 
     [
         ("GET", "/api/state", None),
         ("GET", "/api/models", None),
+        ("GET", "/api/folders", None),
         ("POST", "/api/leads", {}),
         ("PATCH", "/api/leads/missing", {}),
         ("POST", "/api/messages", {}),
@@ -118,7 +121,7 @@ async def test_runtime_scope_sender_immutability_idempotency_and_generation_revo
     token = backend.requests[0].bridge_token
     runtime = {"Authorization": "Bearer " + token}
     assert token != OWNER
-    for path in ("/api/state", "/api/models"):
+    for path in ("/api/state", "/api/models", "/api/folders"):
         assert (await client.get(path, headers=runtime)).status_code == 403
     for path in ("/api/leads", "/api/messages", "/api/room/pause", "/api/room/resume"):
         assert (await client.post(path, json={}, headers=runtime)).status_code == 403
@@ -183,6 +186,83 @@ async def test_model_failure_is_sanitized_and_disappeared_workspace_is_invalid(h
     assert result.status_code == 503 and "secret-value" not in result.text
     result = await client.get("/api/models", params={"workspace": str(tmp_path / "missing")})
     assert result.status_code == 422
+
+
+async def test_folder_browser_lists_only_directories_without_starting_a_runtime(
+    http_app, tmp_path, monkeypatch
+):
+    client, _, backend = http_app
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    for name in ("星图 folder", "Zoo", "alpha", ".worktrees"):
+        (workspace / name).mkdir()
+    (workspace / "private.txt").write_text("private-file-contents")
+    (workspace / "alias").symlink_to(workspace / "alpha", target_is_directory=True)
+    (workspace / "broken").symlink_to(workspace / "missing", target_is_directory=True)
+    monkeypatch.chdir(workspace)
+
+    response = await client.get("/api/folders")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "path": str(workspace),
+        "parent": str(tmp_path),
+        "folders": [
+            {"name": ".worktrees", "path": str(workspace / ".worktrees")},
+            {"name": "alias", "path": str(workspace / "alpha")},
+            {"name": "alpha", "path": str(workspace / "alpha")},
+            {"name": "Zoo", "path": str(workspace / "Zoo")},
+            {"name": "星图 folder", "path": str(workspace / "星图 folder")},
+        ],
+    }
+    assert "private" not in response.text
+    assert backend.requests == []
+
+
+async def test_folder_browser_can_select_empty_folders_and_navigate_to_root(http_app, tmp_path):
+    client, _, _ = http_app
+    empty = tmp_path / "empty folder"
+    empty.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(empty, target_is_directory=True)
+
+    response = await client.get("/api/folders", params={"path": str(alias)})
+    assert response.status_code == 200
+    assert response.json() == {"path": str(empty), "parent": str(tmp_path), "folders": []}
+
+    root = await client.get("/api/folders", params={"path": str(tmp_path.anchor)})
+    assert root.status_code == 200
+    assert root.json()["parent"] is None
+
+
+@pytest.mark.parametrize("value", ["missing", "file", "", "\x00", "x" * 4097])
+async def test_folder_browser_rejects_invalid_paths(http_app, tmp_path, value):
+    client, _, _ = http_app
+    (tmp_path / "file").write_text("private-file-contents")
+    path = str(tmp_path / value) if value in {"missing", "file"} else value
+    response = await client.get("/api/folders", params={"path": path})
+    assert response.status_code == 422
+    assert "private-file-contents" not in response.text
+
+
+async def test_folder_browser_reports_inaccessible_directory_without_raw_errors(
+    http_app, tmp_path, monkeypatch
+):
+    client, _, _ = http_app
+    restricted = tmp_path / "restricted"
+    restricted.mkdir()
+    scandir = os.scandir
+
+    def denied(path):
+        if Path(path) == restricted:
+            raise PermissionError("private-native-error")
+        return scandir(path)
+
+    monkeypatch.setattr(os, "scandir", denied)
+    response = await client.get("/api/folders", params={"path": str(restricted)})
+    assert response.status_code == 422
+    assert "access" in response.json()["detail"].lower()
+    assert "private-native-error" not in response.text
 
 
 async def test_new_owner_token_and_paused_recovery_after_application_restart(tmp_path):

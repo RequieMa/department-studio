@@ -90,7 +90,13 @@
         <label>Handle<span class="handle-field"><span aria-hidden="true">@</span><input id="lead-handle" name="handle" aria-label="Handle" maxlength="32" pattern="[a-zA-Z][a-zA-Z0-9_-]{0,31}" autocomplete="off" required></span></label>
       </div>
       <label>Role and instructions<textarea id="lead-role" name="role" rows="3" maxlength="8000" required></textarea></label>
-      <label>Workspace directory<input id="lead-workspace" name="workspace" autocomplete="off" required></label>
+      <div class="workspace-setting">
+        <label for="lead-workspace">Workspace directory</label>
+        <div class="workspace-field">
+          <input id="lead-workspace" name="workspace" placeholder="No folder selected" readonly>
+          <button id="browse-workspace" type="button" class="secondary">Browse folders</button>
+        </div>
+      </div>
       <p class="field-help">Choose an existing local directory. Its AGENTS.md instructions are included. A changed directory starts a fresh native conversation.</p>
       <div class="model-heading"><span class="eyebrow">Runtime · Pi</span><button id="load-models" type="button" class="secondary compact">Load models</button></div>
       <label>Model<select id="lead-model" name="model" aria-label="Model" required disabled><option value="">Choose a workspace, then load models</option></select></label>
@@ -113,6 +119,28 @@
         <button id="save-department" class="primary" type="submit">Save department</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="folder-dialog" aria-labelledby="folder-dialog-title">
+    <div class="dialog-heading"><div><span class="eyebrow">Workspace</span><h2 id="folder-dialog-title">Choose workspace folder</h2></div>
+      <button id="close-folder-dialog" type="button" class="icon-button" aria-label="Close folder picker">×</button>
+    </div>
+    <p class="dialog-intro">Browse folders on the machine running Studio.</p>
+    <div class="folder-toolbar">
+      <button id="folder-up" type="button" class="secondary compact" aria-label="Up one folder" disabled>↑ Up</button>
+      <button id="folder-home" type="button" class="secondary compact">Home</button>
+      <button id="folder-project" type="button" class="secondary compact">Project folder</button>
+    </div>
+    <p id="folder-location" class="folder-location" aria-live="polite"></p>
+    <label for="folder-filter" class="folder-filter-label">Filter folders</label>
+    <input id="folder-filter" type="search" placeholder="Find a folder by name" autocomplete="off" autofocus>
+    <div id="folder-error" class="inline-error" role="alert" hidden></div>
+    <p id="folder-status" class="folder-status" role="status">Loading folders…</p>
+    <ul id="folder-list" class="folder-list" aria-label="Folders"></ul>
+    <div class="dialog-actions">
+      <button id="cancel-folder" type="button" class="secondary">Cancel</button>
+      <button id="select-folder" type="button" class="primary" disabled>Use this folder</button>
+    </div>
   </dialog>
 </body>
 </html>

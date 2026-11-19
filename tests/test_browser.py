@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import httpx
@@ -33,7 +34,11 @@ def create_department(page, name, handle, role, model):
     dialog.get_by_label("Department name", exact=True).fill(name)
     dialog.get_by_label("Handle", exact=True).fill(handle)
     dialog.get_by_label("Role and instructions", exact=True).fill(role)
-    dialog.get_by_label("Workspace directory", exact=True).fill(str(ROOT))
+    dialog.get_by_role("button", name="Browse folders", exact=True).click()
+    picker = page.get_by_role("dialog", name="Choose workspace folder")
+    expect(picker.locator("#folder-location")).to_have_text(str(ROOT))
+    picker.get_by_role("button", name="Use this folder", exact=True).click()
+    expect(dialog.get_by_label("Workspace directory", exact=True)).to_have_value(str(ROOT))
     dialog.get_by_role("button", name="Load models", exact=True).click()
     expect(dialog.get_by_label("Model", exact=True)).to_be_enabled()
     assert dialog.get_by_label("Model", exact=True).input_value() == ""
@@ -193,4 +198,120 @@ def test_restart_uncertainty_is_not_labeled_confirmed_idle(browser):
     page.goto(ORIGIN + "/#token=" + TOKEN)
     expect(page.get_by_text("Paused · inspect interrupted work", exact=True)).to_be_visible()
     expect(page.get_by_text("Paused · runtimes idle", exact=True)).not_to_be_visible()
+    context.close()
+
+
+def test_workspace_folder_picker_selection_cancel_and_model_reset(browser):
+    ARTIFACTS.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="workspace-picker-", dir=ARTIFACTS) as directory:
+        parent = Path(directory)
+        empty = parent / "星图 workspace"
+        empty.mkdir()
+        literal = "<img src=x onerror=window.folderXss=true>"
+        (parent / literal).mkdir()
+        context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        page = context.new_page()
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.goto(ORIGIN + "/#token=" + TOKEN)
+        page.get_by_role("button", name="Add department", exact=True).click()
+        department = page.get_by_role("dialog", name="New department")
+        department.get_by_label("Department name", exact=True).fill("Pathfinder")
+        department.get_by_label("Handle", exact=True).fill("paths")
+        department.get_by_label("Role and instructions", exact=True).fill("Check workspace setup")
+
+        department.get_by_role("button", name="Browse folders", exact=True).click()
+        picker = page.get_by_role("dialog", name="Choose workspace folder")
+        expect(picker.locator("#folder-location")).to_have_text(str(ROOT))
+        picker.get_by_role("button", name="Open artifacts", exact=True).click()
+        picker.get_by_role("button", name=f"Open {parent.name}", exact=True).click()
+        expect(picker.get_by_role("button", name=f"Open {literal}", exact=True)).to_be_visible()
+        assert page.evaluate("window.folderXss") is None
+        picker.get_by_label("Filter folders", exact=True).fill("星图")
+        expect(picker.get_by_role("button", name=f"Open {literal}", exact=True)).not_to_be_visible()
+        page.screenshot(path=str(ARTIFACTS / "folder-picker-desktop.png"), full_page=True)
+        picker.get_by_role("button", name="Open 星图 workspace", exact=True).click()
+        expect(picker.get_by_text("No subfolders. You can choose this folder.")).to_be_visible()
+        picker.get_by_role("button", name="Use this folder", exact=True).click()
+        expect(picker).not_to_be_visible()
+        expect(department.get_by_label("Workspace directory", exact=True)).to_have_value(str(empty))
+
+        department.get_by_role("button", name="Load models", exact=True).click()
+        model = department.get_by_label("Model", exact=True)
+        expect(model).to_be_enabled()
+        model.select_option(label="Synthetic A · test / model-a")
+        selected = model.input_value()
+        department.get_by_role("button", name="Browse folders", exact=True).click()
+        expect(picker.locator("#folder-location")).to_have_text(str(empty))
+        picker.get_by_role("button", name="Up one folder", exact=True).click()
+        expect(picker.locator("#folder-location")).to_have_text(str(parent))
+        picker.get_by_role("button", name="Cancel", exact=True).click()
+        expect(department.get_by_label("Workspace directory", exact=True)).to_have_value(str(empty))
+        expect(model).to_have_value(selected)
+        expect(department.get_by_role("button", name="Browse folders", exact=True)).to_be_focused()
+        department.get_by_role("button", name="Save department", exact=True).click()
+        expect(department).not_to_be_visible()
+        original = next(lead for lead in snapshot()["leads"] if lead["handle"] == "paths")
+        assert original["workspace"] == str(empty)
+
+        page.get_by_role("button", name="Edit Pathfinder", exact=True).click()
+        department = page.get_by_role("dialog", name="Edit department")
+        model = department.get_by_label("Model", exact=True)
+        department.get_by_role("button", name="Browse folders", exact=True).click()
+        picker.get_by_role("button", name="Project folder", exact=True).click()
+        expect(picker.locator("#folder-location")).to_have_text(str(ROOT))
+        picker.get_by_role("button", name="Use this folder", exact=True).click()
+        expect(model).to_be_disabled()
+        expect(model).to_have_value("")
+        expect(department.get_by_label("Role and instructions", exact=True)).to_have_value(
+            "Check workspace setup"
+        )
+        department.get_by_role("button", name="Load models", exact=True).click()
+        expect(model).to_be_enabled()
+        model.select_option(label="Synthetic A · test / model-a")
+        department.get_by_role("button", name="Save department", exact=True).click()
+        expect(department).not_to_be_visible()
+        changed = next(lead for lead in snapshot()["leads"] if lead["handle"] == "paths")
+        assert changed["workspace"] == str(ROOT)
+        assert changed["id"] == original["id"]
+        assert changed["conversation_id"] != original["conversation_id"]
+        assert errors == []
+        context.close()
+
+
+def test_workspace_folder_picker_error_recovery_and_mobile_focus(browser):
+    context = browser.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce")
+    page = context.new_page()
+    failures = 0
+
+    def unavailable_once(route):
+        nonlocal failures
+        if failures == 0:
+            failures += 1
+            route.fulfill(status=422, json={"detail": "This folder is not accessible."})
+        else:
+            route.continue_()
+
+    page.route("**/api/folders*", unavailable_once)
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    page.get_by_role("button", name="Add department", exact=True).click()
+    department = page.get_by_role("dialog", name="New department")
+    department.get_by_role("button", name="Browse folders", exact=True).click()
+    picker = page.get_by_role("dialog", name="Choose workspace folder")
+    expect(picker.get_by_text("This folder is not accessible.", exact=True)).to_be_visible()
+    expect(picker.get_by_role("button", name="Use this folder", exact=True)).to_be_disabled()
+    picker.get_by_role("button", name="Project folder", exact=True).click()
+    expect(picker.locator("#folder-location")).to_have_text(str(ROOT))
+    expect(picker.get_by_role("button", name="Use this folder", exact=True)).to_be_enabled()
+    assert picker.evaluate("node => node.scrollWidth <= node.clientWidth")
+    ARTIFACTS.mkdir(exist_ok=True)
+    page.screenshot(path=str(ARTIFACTS / "folder-picker-mobile.png"), full_page=True)
+    page.keyboard.press("Escape")
+    expect(picker).not_to_be_visible()
+    expect(department).to_be_visible()
+    expect(department.get_by_role("button", name="Browse folders", exact=True)).to_be_focused()
+    expect(department.get_by_label("Workspace directory", exact=True)).to_have_value("")
+    page.keyboard.press("Escape")
+    expect(department).not_to_be_visible()
+    expect(page.get_by_role("button", name="Add department", exact=True)).to_be_focused()
     context.close()
