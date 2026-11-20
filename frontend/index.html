@@ -43,8 +43,12 @@
 
       <section class="room surface" aria-labelledby="room-title">
         <div class="room-heading">
-          <div><span class="eyebrow">One shared space</span><h2 id="room-title">Project room</h2></div>
-          <span id="room-state" class="state-pill">Room paused</span>
+          <div class="room-title-group"><span class="eyebrow">Shared conversation</span><h2 id="room-title">Project room</h2><p>Messages, requests and replies in one place.</p></div>
+          <div class="room-heading-meta">
+            <div id="recipient-context" class="recipient-context" aria-live="polite"><span>To</span><strong id="room-recipient">the room</strong></div>
+            <button id="activity-toggle" class="activity-toggle" type="button" aria-expanded="false" aria-controls="activity-panel">Activity <span id="activity-count" class="activity-count" hidden>0</span></button>
+            <span id="room-state" class="state-pill">Room paused</span>
+          </div>
         </div>
         <div class="room-control">
           <div><p id="control-status">Waiting for the local service.</p>
@@ -54,6 +58,16 @@
           <button id="pause" class="stop compact" type="button" hidden>Pause &amp; stop</button>
         </div>
         <div id="control-error" class="inline-error control-error" role="alert" hidden></div>
+        <section id="activity-panel" class="activity-panel" aria-label="Run activity" hidden>
+          <div class="activity-heading"><div><strong>Run activity</strong><span id="activity-summary">No unread updates</span></div><button id="activity-mark-read" class="secondary compact" type="button" disabled>Mark all read</button></div>
+          <ul id="activity-list" class="activity-list"></ul>
+          <p id="activity-overflow" class="activity-overflow" hidden></p>
+        </section>
+        <div id="activity-toast" class="activity-toast" role="status" aria-live="polite" hidden></div>
+        <div id="typing-indicator" class="typing-indicator" role="status" aria-live="polite" hidden>
+          <span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span id="typing-text"></span>
+        </div>
 
         <div id="conversation" class="conversation" role="log" aria-label="Shared room messages" aria-live="polite">
           <div id="room-empty" class="room-empty">
@@ -66,11 +80,16 @@
         </div>
 
         <form id="composer" class="composer">
-          <label for="message-text" class="composer-label">Message to the room</label>
-          <textarea id="message-text" rows="3" maxlength="32000" placeholder="Share a thought, or @mention a department…" required></textarea>
+          <label for="message-text" class="composer-label">Write a message</label>
+          <div class="composer-input-wrap">
+            <textarea id="message-text" aria-label="Message to the room" aria-autocomplete="list" aria-controls="mention-options" aria-expanded="false" rows="3" maxlength="32000" placeholder="Share a thought, or @mention a department…" required></textarea>
+            <div id="mention-menu" class="mention-menu" hidden>
+              <div id="mention-options" class="mention-options" role="listbox" aria-label="Available departments"></div>
+            </div>
+          </div>
           <div id="recipient-preview" class="recipient-preview" aria-live="polite">Public note · no department will be notified</div>
           <div id="composer-error" class="inline-error" role="alert" hidden></div>
-          <div class="composer-actions"><span><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Enter</kbd> to send</span>
+          <div class="composer-actions"><span>Enter to send · Shift+Enter for a new line</span>
             <button id="send" class="primary" type="submit" disabled>Send message</button>
           </div>
         </form>
@@ -115,10 +134,28 @@
       </fieldset>
       <label class="check-label availability"><input type="checkbox" id="lead-enabled" checked>Available for addressed requests</label>
       <div id="form-error" class="inline-error" role="alert" hidden></div>
-      <div class="dialog-actions"><button id="cancel-dialog" class="secondary" type="button">Cancel</button>
+      <div class="dialog-actions"><button id="delete-department" class="danger" type="button" hidden>Delete department…</button><span class="dialog-actions-spacer"></span><button id="cancel-dialog" class="secondary" type="button">Cancel</button>
         <button id="save-department" class="primary" type="submit">Save department</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="delete-dialog" aria-labelledby="delete-dialog-title">
+    <div class="dialog-heading"><div><span class="eyebrow">Permanent configuration change</span><h2 id="delete-dialog-title">Delete department</h2></div>
+      <button id="close-delete-dialog" type="button" class="icon-button" aria-label="Close delete confirmation">×</button>
+    </div>
+    <p class="dialog-intro">Delete <strong id="delete-department-name"></strong> from the active team?</p>
+    <div class="delete-retention-note">
+      <p><strong>What stays:</strong> public room history, historical attribution, native session references and workspace files are retained.</p>
+      <p>The current handle remains reserved and cannot be reused by a new department.</p>
+    </div>
+    <p id="delete-busy-note" class="delete-busy-note" hidden></p>
+    <label id="delete-confirmation-field" for="delete-confirmation">Type the department handle to confirm</label>
+    <input id="delete-confirmation" autocomplete="off" spellcheck="false" placeholder="@handle">
+    <div id="delete-error" class="inline-error" role="alert" hidden></div>
+    <div class="dialog-actions"><button id="cancel-delete" class="secondary" type="button">Cancel</button>
+      <button id="confirm-delete" class="danger" type="button" disabled>Delete department</button>
+    </div>
   </dialog>
 
   <dialog id="folder-dialog" aria-labelledby="folder-dialog-title">

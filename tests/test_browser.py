@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from time import monotonic
 
 import httpx
 import pytest
@@ -20,6 +21,13 @@ def browser():
         browser = playwright.chromium.launch(headless=True)
         yield browser
         browser.close()
+
+
+def wait_for_condition(page, predicate, timeout=5):
+    deadline = monotonic() + timeout
+    while not predicate():
+        assert monotonic() < deadline, "Timed out waiting for browser callback"
+        page.wait_for_timeout(20)
 
 
 def snapshot():
@@ -81,6 +89,14 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
     expect(page.locator("#recipient-preview")).to_contain_text("@atlas")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("Synthetic test reply from 星图 Studio.", exact=True)).to_be_visible()
+    expect(page.locator("#activity-toast")).to_have_text("@atlas finished this run")
+    expect(page.locator("#activity-count")).to_have_text("1")
+    page.get_by_role("button", name="Activity 1", exact=True).click()
+    expect(page.get_by_role("region", name="Run activity")).to_contain_text(
+        "@atlas finished this run"
+    )
+    page.get_by_role("button", name="Mark all read", exact=True).click()
+    expect(page.locator("#activity-count")).to_be_hidden()
 
     page.get_by_role("button", name="Edit 星图 Studio", exact=True).click()
     dialog = page.get_by_role("dialog", name="Edit department")
@@ -277,6 +293,520 @@ def test_workspace_folder_picker_selection_cancel_and_model_reset(browser):
         assert changed["conversation_id"] != original["conversation_id"]
         assert errors == []
         context.close()
+
+
+def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    room_state = {
+        "paused": True,
+        "messages": [],
+        "deliveries": [],
+        "leads": [
+            {
+                "id": "atlas",
+                "name": "Atlas",
+                "handle": "atlas",
+                "provider": "test",
+                "model_id": "model-a",
+                "workspace": "/workspace",
+                "enabled": True,
+                "permission": "discuss",
+                "status": "running",
+            },
+            {
+                "id": "canvas",
+                "name": "Canvas",
+                "handle": "canvas",
+                "provider": "test",
+                "model_id": "model-b",
+                "workspace": "/workspace",
+                "enabled": True,
+                "permission": "discuss",
+                "status": "queued",
+            },
+            {
+                "id": "disabled",
+                "name": "Disabled",
+                "handle": "disabled",
+                "provider": "test",
+                "model_id": "model-c",
+                "workspace": "/workspace",
+                "enabled": False,
+                "permission": "discuss",
+                "status": "idle",
+            },
+            {
+                "id": "deleted",
+                "name": "Old team",
+                "handle": "old",
+                "provider": "test",
+                "model_id": "model-d",
+                "workspace": "/workspace",
+                "enabled": True,
+                "deleted": True,
+                "permission": "discuss",
+                "status": "idle",
+            },
+        ],
+    }
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    composer.fill("@")
+    choices = page.get_by_role("listbox", name="Available departments")
+    expect(choices).to_be_visible()
+    expect(choices.get_by_role("option", name="All departments, @all")).to_be_visible()
+    expect(choices.get_by_role("option", name="Atlas, @atlas")).to_be_visible()
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    expect(choices.get_by_role("option", name="Disabled, @disabled")).not_to_be_visible()
+    expect(choices.get_by_role("option", name="Old team, @old")).not_to_be_visible()
+
+    composer.press("ArrowDown")
+    composer.press("Tab")
+    expect(composer).to_have_value("@atlas")
+    expect(choices).not_to_be_visible()
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+
+    composer.fill("Discuss @can now")
+    composer.evaluate(
+        "node => { node.setSelectionRange(12, 12); "
+        "node.dispatchEvent(new Event('click', {bubbles: true})); }"
+    )
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    composer.press("Enter")
+    expect(composer).to_have_value("Discuss @canvas now")
+
+    composer.fill("mail@can")
+    expect(choices).not_to_be_visible()
+    composer.fill("@can")
+    composer.dispatch_event("compositionstart")
+    expect(choices).not_to_be_visible()
+    composer.dispatch_event("compositionend")
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    composer.press("Escape")
+    expect(choices).not_to_be_visible()
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+    composer.fill("@can")
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    page.get_by_role("button", name="Add department", exact=True).focus()
+    expect(choices).not_to_be_visible()
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+    composer.fill("@can")
+    choices.get_by_role("option", name="Canvas, @canvas").click()
+    expect(composer).to_have_value("@canvas")
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+    context.close()
+
+
+def test_recipient_context_wraps_and_running_activity_is_not_typing(browser):
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    leads = [
+        {
+            "id": str(number),
+            "name": f"Team {number}",
+            "handle": f"department{number}",
+            "provider": "test",
+            "model_id": "fixture",
+            "workspace": "/workspace",
+            "enabled": True,
+            "permission": "discuss",
+            "status": "running",
+        }
+        for number in range(8)
+    ]
+    current = {
+        "paused": False,
+        "leads": leads,
+        "messages": [],
+        "deliveries": [{"id": "run", "lead_id": "0", "state": "running"}],
+    }
+    page.route("**/api/state", lambda route: route.fulfill(json=current))
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    composer.fill("@all ")
+    expect(page.locator("#room-recipient")).to_contain_text("@department7")
+    assert page.locator("#recipient-context").evaluate("""node => {
+      const badge = node.getBoundingClientRect();
+      const room = document.querySelector('.room').getBoundingClientRect();
+      return badge.left >= room.left && badge.right <= room.right
+        && node.scrollWidth <= node.clientWidth;
+    }""")
+    expect(page.locator("#typing-text")).to_have_text("Team 0 is working…")
+    current["deliveries"].append({"id": "second", "lead_id": "1", "state": "running"})
+    expect(page.locator("#typing-text")).to_have_text("Team 0 and Team 1 are working…")
+    current["deliveries"][0]["state"] = "stopping"
+    current["deliveries"][1]["state"] = "failed"
+    expect(page.locator("#typing-indicator")).to_be_hidden()
+    context.close()
+
+
+def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    message = {
+        "id": "request",
+        "sender_id": None,
+        "sender_name": "You",
+        "sender_kind": "human",
+        "sender_handle": "you",
+        "timestamp": "2026-11-20T04:00:00+00:00",
+        "text": "work",
+        "recipient_ids": ["atlas"],
+        "recipient_handles": ["historic-atlas"],
+        "chain_id": "chain",
+        "notice": None,
+    }
+
+    def delivery(delivery_id, status):
+        return {
+            "id": delivery_id,
+            "generation": 1,
+            "message_id": "request",
+            "lead_id": "atlas",
+            "state": status,
+        }
+
+    current = {
+        "paused": False,
+        "leads": [],
+        "messages": [message],
+        "deliveries": [delivery("old", "completed")],
+    }
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(current)
+        ),
+    )
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    expect(page.get_by_text("Connected locally", exact=True)).to_be_visible()
+    expect(page.locator("#activity-count")).to_be_hidden()  # Initial history is a silent baseline.
+
+    current["deliveries"] = [
+        delivery("failed-first", "failed"),
+        *[delivery(f"success-{number}", "completed") for number in range(55)],
+    ]
+    expect(page.locator("#activity-count")).to_have_text("50", timeout=5000)
+    page.get_by_role("button", name="Activity 50", exact=True).click()
+    expect(page.locator("#activity-list li")).to_have_count(50)
+    expect(page.locator("#activity-overflow")).to_contain_text("1 non-success")
+    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas finished this run")
+
+    focused_key = page.locator("#activity-list li").first.get_attribute("data-activity")
+    focused = page.locator(f'#activity-list [data-activity="{focused_key}"] button').first
+    focused.focus()
+    current["deliveries"].append(delivery("new", "completed"))
+    page.wait_for_timeout(1200)
+    expect(focused).to_be_focused()
+
+    # A single stable row is updated for stopping -> interrupted, and repeated
+    # snapshots do not create another row.
+    current["deliveries"] = [delivery("life", "stopping")]
+    page.wait_for_timeout(1200)
+    current["deliveries"][0]["state"] = "interrupted"
+    page.wait_for_timeout(1200)
+    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas interrupted this run")
+    expect(page.locator("#activity-list li")).to_have_count(50)
+    context.close()
+
+
+def test_composer_enter_sends_shift_enter_adds_newlines_and_keeps_drafts(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    room_state = {
+        "paused": False,
+        "messages": [],
+        "deliveries": [],
+        "leads": [
+            {
+                "id": "atlas",
+                "name": "Atlas",
+                "handle": "atlas",
+                "provider": "test",
+                "model_id": "model-a",
+                "workspace": "/workspace",
+                "enabled": True,
+                "permission": "discuss",
+                "status": "idle",
+            }
+        ],
+    }
+    posted = []
+    mode = {"failure": False, "hold": False, "pending": None}
+
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+
+    def post_message(route):
+        posted.append(json.loads(route.request.post_data))
+        if mode["hold"]:
+            mode["pending"] = route
+        elif mode["failure"]:
+            route.fulfill(status=500, json={"detail": "Synthetic send failure"})
+        else:
+            route.fulfill(status=200, json={"id": f"message-{len(posted)}"})
+
+    page.route("**/api/messages", post_message)
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    expect(
+        page.get_by_text("Enter to send · Shift+Enter for a new line", exact=True)
+    ).to_be_visible()
+
+    composer.fill("plain Enter")
+    composer.press("Enter")
+    wait_for_condition(page, lambda: len(posted) == 1)
+    expect(composer).to_have_value("")
+
+    composer.fill("beforeafter")
+    composer.evaluate("node => node.setSelectionRange(6, 6)")
+    composer.press("Shift+Enter")
+    expect(composer).to_have_value("before\nafter")
+    assert len(posted) == 1
+
+    composer.fill("@at")
+    expect(page.get_by_role("listbox", name="Available departments")).to_be_visible()
+    composer.press("Shift+Enter")
+    expect(composer).to_have_value("@at\n")
+    assert len(posted) == 1
+    composer.fill("@at")
+    composer.press("Shift+Tab")
+    expect(composer).to_have_value("@at")
+    assert len(posted) == 1
+    composer.focus()
+    composer.press("Enter")
+    expect(composer).to_have_value("@atlas")
+    assert len(posted) == 1
+    composer.press("Enter")
+    wait_for_condition(page, lambda: len(posted) == 2)
+
+    # Composition confirmation, including the post-composition keyCode 229 fallback, is inert.
+    composer.fill("IME draft")
+    composer.dispatch_event("compositionstart")
+    composer.dispatch_event("keydown", {"key": "Enter", "isComposing": True})
+    composer.dispatch_event("compositionend")
+    composer.evaluate(
+        "node => { const event = new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}); "
+        "Object.defineProperty(event, 'keyCode', {value: 229}); node.dispatchEvent(event); }"
+    )
+    assert len(posted) == 2
+    expect(composer).to_have_value("IME draft")
+
+    composer.fill("held Enter")
+    composer.evaluate("""node => {
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', repeat: true, bubbles: true}));
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', repeat: true, bubbles: true}));
+    }""")
+    wait_for_condition(page, lambda: len(posted) == 3)
+
+    composer.fill("   ")
+    composer.press("Enter")
+    assert len(posted) == 3
+    composer.fill("@unknown")
+    composer.press("Enter")
+    assert len(posted) == 3
+
+    mode["hold"] = True
+    composer.fill("in flight")
+    composer.press("Enter")
+    wait_for_condition(page, lambda: mode["pending"] is not None)
+    composer.press("Enter")
+    assert len(posted) == 4
+    mode["hold"] = False
+    mode["pending"].fulfill(status=200, json={"id": "in-flight"})
+    expect(composer).to_have_value("")
+
+    mode["failure"] = True
+    composer.fill("keep after failure")
+    composer.press("Control+Enter")
+    expect(page.locator("#composer-error")).to_contain_text("Synthetic send failure")
+    expect(composer).to_have_value("keep after failure")
+    assert len(posted) == 5
+    mode["failure"] = False
+    context.close()
+
+
+def test_delete_department_confirmation_uses_revision_and_blocks_busy_departments(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    lead = {
+        "id": "atlas",
+        "name": "Atlas",
+        "handle": "atlas",
+        "provider": "test",
+        "model_id": "model-a",
+        "workspace": "/workspace",
+        "enabled": True,
+        "permission": "discuss",
+        "status": "idle",
+        "revision": 4,
+    }
+    room_state = {"paused": False, "messages": [], "deliveries": [], "leads": [lead]}
+    deleted_requests = []
+
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+
+    def delete_atlas(route):
+        deleted_requests.append(route.request)
+        assert route.request.method == "DELETE"
+        room_state["leads"] = []
+        route.fulfill(
+            status=200,
+            json={"id": "atlas", "revision": 5, "deleted_at": "2026-11-20T04:00:00+00:00"},
+        )
+
+    page.route("**/api/leads/atlas*", delete_atlas)
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    composer.fill("Keep this draft")
+    page.get_by_role("button", name="Edit Atlas", exact=True).click()
+    department = page.get_by_role("dialog", name="Edit department")
+    department.get_by_role("button", name="Delete department…", exact=True).click()
+    confirmation = page.get_by_role("dialog", name="Delete department")
+    expect(confirmation.get_by_text("public room history", exact=False)).to_be_visible()
+    expect(confirmation.get_by_text("workspace files are retained", exact=False)).to_be_visible()
+    expect(confirmation.get_by_text("handle remains reserved", exact=False)).to_be_visible()
+    delete_input = confirmation.get_by_label("Type the department handle to confirm", exact=True)
+    delete_input.fill("@atlas")
+    confirmation.get_by_role("button", name="Delete department", exact=True).click()
+    expect(confirmation).not_to_be_visible()
+    expect(page.get_by_role("button", name="Edit Atlas", exact=True)).not_to_be_visible()
+    expect(page.get_by_text("Name your first department", exact=True)).to_be_visible()
+    expect(composer).to_have_value("Keep this draft")
+    assert len(deleted_requests) == 1
+    assert "revision=4" in deleted_requests[0].url
+
+    room_state["leads"] = [{**lead, "status": "running"}]
+    page.reload()
+    page.get_by_role("button", name="Edit Atlas", exact=True).click()
+    department = page.get_by_role("dialog", name="Edit department")
+    department.get_by_role("button", name="Delete department…", exact=True).click()
+    confirmation = page.get_by_role("dialog", name="Delete department")
+    expect(
+        confirmation.get_by_text("queued, running or stopping work", exact=False)
+    ).to_be_visible()
+    expect(confirmation.get_by_text("Pause & stop", exact=False)).to_be_visible()
+    expect(
+        confirmation.get_by_role("button", name="Delete department", exact=True)
+    ).to_be_disabled()
+    assert len(deleted_requests) == 1
+    context.close()
+
+
+def test_message_bodies_render_safe_markdown_and_history_after_reload(browser):
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    markdown = """# Release notes
+
+This is **strong** and *emphasized* with `inline code` and [safe](https://example.com/path).
+
+- first
+- second
+
+1. one
+2. two
+
+> A quoted note
+
+```text
+<literal & code>
+```
+
+| Column | Value |
+| --- | --- |
+| long | content |
+
+![sunset](https://example.com/image.png)"""
+    room_state = {
+        "paused": True,
+        "leads": [],
+        "deliveries": [],
+        "messages": [
+            {
+                "id": "markdown",
+                "sender_id": "atlas",
+                "sender_name": "Atlas",
+                "sender_kind": "lead",
+                "sender_handle": "atlas",
+                "timestamp": "2026-11-20T04:00:00+00:00",
+                "text": markdown,
+                "recipient_ids": [],
+                "recipient_handles": [],
+                "chain_id": None,
+                "notice": None,
+            },
+            {
+                "id": "literal",
+                "sender_id": "atlas",
+                "sender_name": "Atlas",
+                "sender_kind": "lead",
+                "sender_handle": "atlas",
+                "timestamp": "2026-11-20T04:01:00+00:00",
+                "text": (
+                    "<img src=x onerror=window.markdownXss=true> "
+                    "[bad](javascript:alert(1)) " + ("unbroken" * 80)
+                ),
+                "recipient_ids": [],
+                "recipient_handles": [],
+                "chain_id": None,
+                "notice": None,
+            },
+        ],
+    }
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    body = page.locator(".message-text").first
+    expect(body.get_by_role("heading", name="Release notes")).to_be_visible()
+    expect(body.locator("strong")).to_have_text("strong")
+    expect(body.locator("em")).to_have_text("emphasized")
+    expect(body.locator("ul li")).to_have_count(2)
+    expect(body.locator("ol li")).to_have_count(2)
+    expect(body.locator("blockquote")).to_contain_text("A quoted note")
+    expect(body.locator("pre code")).to_have_text("<literal & code>")
+    expect(body.locator("table th")).to_have_count(2)
+    expect(body.get_by_role("link", name="safe")).to_have_attribute(
+        "href", "https://example.com/path"
+    )
+    expect(body.get_by_text("[Image: sunset]", exact=True)).to_be_visible()
+    expect(page.locator(".message-text img")).to_have_count(0)
+    expect(page.locator(".message-text a")).to_have_count(1)
+    expect(
+        page.get_by_text("<img src=x onerror=window.markdownXss=true>", exact=False)
+    ).to_be_visible()
+    assert page.evaluate("window.markdownXss") is None
+    literal_body = page.locator(".message-text").nth(1)
+    assert literal_body.evaluate("node => node.scrollWidth <= node.clientWidth")
+    page.reload()
+    expect(
+        page.locator(".message-text").first.get_by_role("heading", name="Release notes")
+    ).to_be_visible()
+    context.close()
 
 
 def test_workspace_folder_picker_error_recovery_and_mobile_focus(browser):
