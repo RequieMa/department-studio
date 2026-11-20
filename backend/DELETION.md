@@ -59,3 +59,29 @@ against the built wheel. They also compare HTTP-served assets with wheel content
 These checks do not establish combined browser integration with the separate frontend
 candidate. Real-endpoint browser verification and independent review remain required
 before any conditional local merge; deployment and live migration remain separate.
+
+### Fresh backend verification — 2026-11-20
+
+Verified backend source commit `afca952` in its own uv-managed worktree environment,
+using the existing offline cache and temporary test data only:
+
+```bash
+UV_CACHE_DIR=/tmp/department-studio-uv-cache UV_OFFLINE=1 uv sync --locked
+UV_CACHE_DIR=/tmp/department-studio-uv-cache UV_OFFLINE=1 uv run --no-sync pytest -q
+UV_CACHE_DIR=/tmp/department-studio-uv-cache UV_OFFLINE=1 uv run --no-sync ruff check .
+UV_CACHE_DIR=/tmp/department-studio-uv-cache UV_OFFLINE=1 uv run --no-sync ruff format --check .
+node --test tests/test_bridge_extension.mjs
+node --check frontend/app.js
+```
+
+Inherited `PYTHONPATH`, `PYTHONHOME` and `VIRTUAL_ENV` were removed for the test
+invocation so another checkout/environment could not shadow the candidate.
+
+- **182 ordinary tests passed; 5 browser tests deselected.** This includes Store,
+  API, service, deletion/migration and isolated installed-wheel/HTTP asset checks.
+- Ruff lint and formatting passed (38 Python files).
+- All 6 Node bridge tests and frontend JavaScript syntax passed.
+- No live database/session access, live model calls, server restart or migration.
+
+Combined frontend/backend browser verification is still a separate integration gate;
+these results are not evidence that the pending frontend candidates are accepted.
