@@ -12,6 +12,7 @@ htmlcov/
 
 # Local runtime state and credentials
 .department-studio/
+/live-demo/
 .env
 .env.*
 !.env.example

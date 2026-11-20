@@ -41,7 +41,7 @@ Use the exact printed address: other Host headers and browser origins are reject
 
 The backend serves `frontend/` in editable checkouts. Wheels bundle the same assets under `department_studio/static/`, so an installed CLI also works outside the repository. Frontend/backend remain one same-origin application; this split does not change authentication, permissions or stop behavior.
 
-For the preserved bootstrap checkout and a human-controlled runtime switch, see [root checkout integration](docs/root-integration.md).
+For the preserved bootstrap checkout and a human-controlled runtime switch, see [root checkout integration](docs/root-integration.md). For the subsequent deletion/UI integration, combined test evidence and required pre-relaunch backup, see [relaunch integration](docs/relaunch-integration.md).
 
 ## Configure departments
 
@@ -85,6 +85,8 @@ For self-development, first save a Git baseline and select separate workspaces/w
 ## Data and runtime boundary
 
 The default `.department-studio/` directory is git-ignored and private to the local user. It contains `room.sqlite`, a process lock and `sessions/<department-id>/`. Keep it outside tracked source when choosing a custom location. A second Studio process cannot open the same data directory.
+
+The default is relative to your launch directory. To keep departments, room history and native conversations across launches, always use the same explicit absolute `--data-dir`; switching directories/checkouts otherwise opens a different room. The local `/live-demo/` directory is also ignored, but custom locations elsewhere still need explicit exclusion. Department deletion retains history and native session references; it does not delete workspace/session files. Its schema migration runs when opening an old store, so back up with the service stopped before upgrading and do not downgrade to an older binary afterward.
 
 SQLite owns department identity, public messages, chains, receipts and delivery state. Pi owns its native session files. A fresh Pi child is launched for each delivery with the department's explicit conversation ID; its immutable runtime credential expires with that delivery. Browser owner credentials are never passed to Pi. Studio discards raw stderr and sanitizes runtime errors instead of storing raw logs.
 
