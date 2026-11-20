@@ -89,13 +89,7 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
     expect(page.locator("#recipient-preview")).to_contain_text("@atlas")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("Synthetic test reply from 星图 Studio.", exact=True)).to_be_visible()
-    expect(page.locator("#activity-toast")).to_have_text("@atlas finished this run")
-    expect(page.locator("#activity-count")).to_have_text("1")
-    page.get_by_role("button", name="Activity 1", exact=True).click()
-    expect(page.get_by_role("region", name="Run activity")).to_contain_text(
-        "@atlas finished this run"
-    )
-    page.get_by_role("button", name="Mark all read", exact=True).click()
+    # Ordinary completion remains in the room; Activity is reserved for explicit decisions.
     expect(page.locator("#activity-count")).to_be_hidden()
 
     page.get_by_role("button", name="Edit 星图 Studio", exact=True).click()
@@ -451,7 +445,7 @@ def test_recipient_context_wraps_and_running_activity_is_not_typing(browser):
     context.close()
 
 
-def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
+def test_normal_delivery_transitions_do_not_create_actionable_activity(browser):
     context = browser.new_context()
     page = context.new_page()
     message = {
@@ -483,41 +477,42 @@ def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
         "messages": [message],
         "deliveries": [delivery("old", "completed")],
     }
+    empty_tasks = {"tasks": [], "next_cursor": None, "open_count": 0}
+    empty_actions = {"action_requests": [], "next_cursor": None}
     page.route(
         "**/api/state",
         lambda route: route.fulfill(
             status=200, content_type="application/json", body=json.dumps(current)
         ),
     )
+    page.route(
+        "**/api/tasks**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(empty_tasks)
+        ),
+    )
+    page.route(
+        "**/api/action-requests**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(empty_actions)
+        ),
+    )
     page.goto(ORIGIN + "/#token=" + TOKEN)
     expect(page.get_by_text("Connected locally", exact=True)).to_be_visible()
-    expect(page.locator("#activity-count")).to_be_hidden()  # Initial history is a silent baseline.
+    expect(page.locator("#activity-count")).to_be_hidden()
 
+    # Completed, failed, stopping and interrupted runs are room history, not decisions.
     current["deliveries"] = [
-        delivery("failed-first", "failed"),
-        *[delivery(f"success-{number}", "completed") for number in range(55)],
+        delivery("failed", "failed"),
+        delivery("completed", "completed"),
+        delivery("stopping", "stopping"),
+        delivery("interrupted", "interrupted"),
     ]
-    expect(page.locator("#activity-count")).to_have_text("50", timeout=5000)
-    page.get_by_role("button", name="Activity 50", exact=True).click()
-    expect(page.locator("#activity-list li")).to_have_count(50)
-    expect(page.locator("#activity-overflow")).to_contain_text("1 non-success")
-    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas finished this run")
-
-    focused_key = page.locator("#activity-list li").first.get_attribute("data-activity")
-    focused = page.locator(f'#activity-list [data-activity="{focused_key}"] button').first
-    focused.focus()
-    current["deliveries"].append(delivery("new", "completed"))
     page.wait_for_timeout(1200)
-    expect(focused).to_be_focused()
-
-    # A single stable row is updated for stopping -> interrupted, and repeated
-    # snapshots do not create another row.
-    current["deliveries"] = [delivery("life", "stopping")]
-    page.wait_for_timeout(1200)
-    current["deliveries"][0]["state"] = "interrupted"
-    page.wait_for_timeout(1200)
-    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas interrupted this run")
-    expect(page.locator("#activity-list li")).to_have_count(50)
+    expect(page.locator("#activity-count")).to_be_hidden()
+    page.get_by_role("button", name="Activity", exact=True).click()
+    expect(page.locator("#activity-summary")).to_have_text("No decisions or actions requested.")
+    expect(page.locator("#activity-list li")).to_have_count(0)
     context.close()
 
 
