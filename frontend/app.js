@@ -215,14 +215,18 @@ function appendMarkdownTable(parent, headerLine, lines, start) {
   return index;
 }
 
-function appendMarkdownBlocks(parent, source) {
+function appendMarkdownBlocks(parent, source, depth = 0) {
+  if (depth > 24) {
+    parent.append(document.createTextNode(source));
+    return;
+  }
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   let index = 0;
   while (index < lines.length) {
     if (!lines[index].trim()) { index += 1; continue; }
-    const fence = /^ {0,3}(```|~~~)/.exec(lines[index]);
+    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(lines[index]);
     if (fence) {
-      const close = new RegExp(`^ {0,3}${fence[1]}\\s*$`);
+      const close = new RegExp(`^ {0,3}${fence[1]}[ \\t]*$`);
       const start = ++index;
       while (index < lines.length && !close.test(lines[index])) index += 1;
       const pre = document.createElement("pre");
@@ -251,7 +255,7 @@ function appendMarkdownBlocks(parent, source) {
         index += 1;
       }
       const quote = document.createElement("blockquote");
-      appendMarkdownBlocks(quote, quoted.join("\n"));
+      appendMarkdownBlocks(quote, quoted.join("\n"), depth + 1);
       parent.append(quote);
       continue;
     }
@@ -259,6 +263,7 @@ function appendMarkdownBlocks(parent, source) {
     if (list) {
       const ordered = /\d/.test(list[2]);
       const node = document.createElement(ordered ? "ol" : "ul");
+      if (ordered) node.start = Number.parseInt(list[2], 10);
       while (index < lines.length) {
         const item = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[index]);
         if (!item || /\d/.test(item[2]) !== ordered) break;
@@ -284,7 +289,8 @@ function appendMarkdownBlocks(parent, source) {
 
 function renderMarkdownBody(node, source) {
   node.replaceChildren();
-  appendMarkdownBlocks(node, source);
+  try { appendMarkdownBlocks(node, source); }
+  catch { node.replaceChildren(document.createTextNode(source)); }
 }
 
 function renderMessages() {
@@ -311,13 +317,14 @@ function renderMessages() {
         element("span", "message-author", message.sender_name),
         element("span", "message-handle", message.sender_kind === "human" ? "You · project lead" : `Department · @${message.sender_handle}`),
       );
-      header.append(avatar, identity, time);
+      header.append(avatar, identity);
+      if (message.recipient_handles?.length) {
+        header.append(element("span", "recipient-label", `To ${message.recipient_handles.map((handle) => `@${handle}`).join(", ")}`));
+      }
+      header.append(time);
       const body = element("div", "message-text");
       renderMarkdownBody(body, message.text);
       article.append(header, body);
-      if (message.recipient_handles?.length) {
-        article.append(element("div", "recipient-label", `To ${message.recipient_handles.map((handle) => `@${handle}`).join(", ")}`));
-      }
       if (message.notice) article.append(element("p", "message-notice", message.notice));
       article.append(element("div", "delivery-list"));
       messageNodes.set(message.id, article);
@@ -801,9 +808,8 @@ $("#confirm-delete").addEventListener("click", async () => {
   } catch (error) {
     notice("#delete-error", error.message);
     if (/revision|stale|changed/i.test(error.message)) {
-      await refresh();
-      editing = state.leads.find((lead) => lead.id === deleted.id) || null;
       $("#delete-confirmation").value = "";
+      notice("#delete-error", "This department changed. Cancel and reopen its settings before trying again.");
     }
   } finally {
     deleting = false;
