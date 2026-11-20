@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from time import monotonic
 
 import httpx
 import pytest
@@ -20,6 +21,13 @@ def browser():
         browser = playwright.chromium.launch(headless=True)
         yield browser
         browser.close()
+
+
+def wait_for_condition(page, predicate, timeout=5):
+    deadline = monotonic() + timeout
+    while not predicate():
+        assert monotonic() < deadline, "Timed out waiting for browser callback"
+        page.wait_for_timeout(20)
 
 
 def snapshot():
@@ -84,9 +92,9 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
     expect(page.locator("#activity-toast")).to_have_text("@atlas finished this run")
     expect(page.locator("#activity-count")).to_have_text("1")
     page.get_by_role("button", name="Activity 1", exact=True).click()
-    expect(
-        page.get_by_role("region", name="Run activity")
-    ).to_contain_text("@atlas finished this run")
+    expect(page.get_by_role("region", name="Run activity")).to_contain_text(
+        "@atlas finished this run"
+    )
     page.get_by_role("button", name="Mark all read", exact=True).click()
     expect(page.locator("#activity-count")).to_be_hidden()
 
@@ -296,24 +304,49 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
         "deliveries": [],
         "leads": [
             {
-                "id": "atlas", "name": "Atlas", "handle": "atlas", "provider": "test",
-                "model_id": "model-a", "workspace": "/workspace", "enabled": True,
-                "permission": "discuss", "status": "running",
+                "id": "atlas",
+                "name": "Atlas",
+                "handle": "atlas",
+                "provider": "test",
+                "model_id": "model-a",
+                "workspace": "/workspace",
+                "enabled": True,
+                "permission": "discuss",
+                "status": "running",
             },
             {
-                "id": "canvas", "name": "Canvas", "handle": "canvas", "provider": "test",
-                "model_id": "model-b", "workspace": "/workspace", "enabled": True,
-                "permission": "discuss", "status": "queued",
+                "id": "canvas",
+                "name": "Canvas",
+                "handle": "canvas",
+                "provider": "test",
+                "model_id": "model-b",
+                "workspace": "/workspace",
+                "enabled": True,
+                "permission": "discuss",
+                "status": "queued",
             },
             {
-                "id": "disabled", "name": "Disabled", "handle": "disabled", "provider": "test",
-                "model_id": "model-c", "workspace": "/workspace", "enabled": False,
-                "permission": "discuss", "status": "idle",
+                "id": "disabled",
+                "name": "Disabled",
+                "handle": "disabled",
+                "provider": "test",
+                "model_id": "model-c",
+                "workspace": "/workspace",
+                "enabled": False,
+                "permission": "discuss",
+                "status": "idle",
             },
             {
-                "id": "deleted", "name": "Old team", "handle": "old", "provider": "test",
-                "model_id": "model-d", "workspace": "/workspace", "enabled": True,
-                "deleted": True, "permission": "discuss", "status": "idle",
+                "id": "deleted",
+                "name": "Old team",
+                "handle": "old",
+                "provider": "test",
+                "model_id": "model-d",
+                "workspace": "/workspace",
+                "enabled": True,
+                "deleted": True,
+                "permission": "discuss",
+                "status": "idle",
             },
         ],
     }
@@ -380,14 +413,22 @@ def test_recipient_context_wraps_and_running_activity_is_not_typing(browser):
     page = context.new_page()
     leads = [
         {
-            "id": str(number), "name": f"Team {number}", "handle": f"department{number}",
-            "provider": "test", "model_id": "fixture", "workspace": "/workspace",
-            "enabled": True, "permission": "discuss", "status": "running",
+            "id": str(number),
+            "name": f"Team {number}",
+            "handle": f"department{number}",
+            "provider": "test",
+            "model_id": "fixture",
+            "workspace": "/workspace",
+            "enabled": True,
+            "permission": "discuss",
+            "status": "running",
         }
         for number in range(8)
     ]
     current = {
-        "paused": False, "leads": leads, "messages": [],
+        "paused": False,
+        "leads": leads,
+        "messages": [],
         "deliveries": [{"id": "run", "lead_id": "0", "state": "running"}],
     }
     page.route("**/api/state", lambda route: route.fulfill(json=current))
@@ -414,19 +455,32 @@ def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
     context = browser.new_context()
     page = context.new_page()
     message = {
-        "id": "request", "sender_id": None, "sender_name": "You", "sender_kind": "human",
-        "sender_handle": "you", "timestamp": "2026-11-20T04:00:00+00:00", "text": "work",
-        "recipient_ids": ["atlas"], "recipient_handles": ["historic-atlas"],
-        "chain_id": "chain", "notice": None,
+        "id": "request",
+        "sender_id": None,
+        "sender_name": "You",
+        "sender_kind": "human",
+        "sender_handle": "you",
+        "timestamp": "2026-11-20T04:00:00+00:00",
+        "text": "work",
+        "recipient_ids": ["atlas"],
+        "recipient_handles": ["historic-atlas"],
+        "chain_id": "chain",
+        "notice": None,
     }
+
     def delivery(delivery_id, status):
         return {
-            "id": delivery_id, "generation": 1, "message_id": "request",
-            "lead_id": "atlas", "state": status,
+            "id": delivery_id,
+            "generation": 1,
+            "message_id": "request",
+            "lead_id": "atlas",
+            "state": status,
         }
 
     current = {
-        "paused": False, "leads": [], "messages": [message],
+        "paused": False,
+        "leads": [],
+        "messages": [message],
         "deliveries": [delivery("old", "completed")],
     }
     page.route(
@@ -467,13 +521,141 @@ def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
     context.close()
 
 
+def test_composer_enter_sends_shift_enter_adds_newlines_and_keeps_drafts(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    room_state = {
+        "paused": False,
+        "messages": [],
+        "deliveries": [],
+        "leads": [
+            {
+                "id": "atlas",
+                "name": "Atlas",
+                "handle": "atlas",
+                "provider": "test",
+                "model_id": "model-a",
+                "workspace": "/workspace",
+                "enabled": True,
+                "permission": "discuss",
+                "status": "idle",
+            }
+        ],
+    }
+    posted = []
+    mode = {"failure": False, "hold": False, "pending": None}
+
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+
+    def post_message(route):
+        posted.append(json.loads(route.request.post_data))
+        if mode["hold"]:
+            mode["pending"] = route
+        elif mode["failure"]:
+            route.fulfill(status=500, json={"detail": "Synthetic send failure"})
+        else:
+            route.fulfill(status=200, json={"id": f"message-{len(posted)}"})
+
+    page.route("**/api/messages", post_message)
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    expect(
+        page.get_by_text("Enter to send · Shift+Enter for a new line", exact=True)
+    ).to_be_visible()
+
+    composer.fill("plain Enter")
+    composer.press("Enter")
+    wait_for_condition(page, lambda: len(posted) == 1)
+    expect(composer).to_have_value("")
+
+    composer.fill("beforeafter")
+    composer.evaluate("node => node.setSelectionRange(6, 6)")
+    composer.press("Shift+Enter")
+    expect(composer).to_have_value("before\nafter")
+    assert len(posted) == 1
+
+    composer.fill("@at")
+    expect(page.get_by_role("listbox", name="Available departments")).to_be_visible()
+    composer.press("Shift+Enter")
+    expect(composer).to_have_value("@at\n")
+    assert len(posted) == 1
+    composer.fill("@at")
+    composer.press("Shift+Tab")
+    expect(composer).to_have_value("@at")
+    assert len(posted) == 1
+    composer.focus()
+    composer.press("Enter")
+    expect(composer).to_have_value("@atlas")
+    assert len(posted) == 1
+    composer.press("Enter")
+    wait_for_condition(page, lambda: len(posted) == 2)
+
+    # Composition confirmation, including the post-composition keyCode 229 fallback, is inert.
+    composer.fill("IME draft")
+    composer.dispatch_event("compositionstart")
+    composer.dispatch_event("keydown", {"key": "Enter", "isComposing": True})
+    composer.dispatch_event("compositionend")
+    composer.evaluate(
+        "node => { const event = new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}); "
+        "Object.defineProperty(event, 'keyCode', {value: 229}); node.dispatchEvent(event); }"
+    )
+    assert len(posted) == 2
+    expect(composer).to_have_value("IME draft")
+
+    composer.fill("held Enter")
+    composer.evaluate("""node => {
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', repeat: true, bubbles: true}));
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', repeat: true, bubbles: true}));
+    }""")
+    wait_for_condition(page, lambda: len(posted) == 3)
+
+    composer.fill("   ")
+    composer.press("Enter")
+    assert len(posted) == 3
+    composer.fill("@unknown")
+    composer.press("Enter")
+    assert len(posted) == 3
+
+    mode["hold"] = True
+    composer.fill("in flight")
+    composer.press("Enter")
+    wait_for_condition(page, lambda: mode["pending"] is not None)
+    composer.press("Enter")
+    assert len(posted) == 4
+    mode["hold"] = False
+    mode["pending"].fulfill(status=200, json={"id": "in-flight"})
+    expect(composer).to_have_value("")
+
+    mode["failure"] = True
+    composer.fill("keep after failure")
+    composer.press("Control+Enter")
+    expect(page.locator("#composer-error")).to_contain_text("Synthetic send failure")
+    expect(composer).to_have_value("keep after failure")
+    assert len(posted) == 5
+    mode["failure"] = False
+    context.close()
+
+
 def test_delete_department_confirmation_uses_revision_and_blocks_busy_departments(browser):
     context = browser.new_context()
     page = context.new_page()
     lead = {
-        "id": "atlas", "name": "Atlas", "handle": "atlas", "provider": "test",
-        "model_id": "model-a", "workspace": "/workspace", "enabled": True,
-        "permission": "discuss", "status": "idle", "revision": 4,
+        "id": "atlas",
+        "name": "Atlas",
+        "handle": "atlas",
+        "provider": "test",
+        "model_id": "model-a",
+        "workspace": "/workspace",
+        "enabled": True,
+        "permission": "discuss",
+        "status": "idle",
+        "revision": 4,
     }
     room_state = {"paused": False, "messages": [], "deliveries": [], "leads": [lead]}
     deleted_requests = []
@@ -562,20 +744,33 @@ This is **strong** and *emphasized* with `inline code` and [safe](https://exampl
         "deliveries": [],
         "messages": [
             {
-                "id": "markdown", "sender_id": "atlas", "sender_name": "Atlas",
-                "sender_kind": "lead", "sender_handle": "atlas",
-                "timestamp": "2026-11-20T04:00:00+00:00", "text": markdown,
-                "recipient_ids": [], "recipient_handles": [], "chain_id": None, "notice": None,
+                "id": "markdown",
+                "sender_id": "atlas",
+                "sender_name": "Atlas",
+                "sender_kind": "lead",
+                "sender_handle": "atlas",
+                "timestamp": "2026-11-20T04:00:00+00:00",
+                "text": markdown,
+                "recipient_ids": [],
+                "recipient_handles": [],
+                "chain_id": None,
+                "notice": None,
             },
             {
-                "id": "literal", "sender_id": "atlas", "sender_name": "Atlas",
-                "sender_kind": "lead", "sender_handle": "atlas",
+                "id": "literal",
+                "sender_id": "atlas",
+                "sender_name": "Atlas",
+                "sender_kind": "lead",
+                "sender_handle": "atlas",
                 "timestamp": "2026-11-20T04:01:00+00:00",
                 "text": (
                     "<img src=x onerror=window.markdownXss=true> "
                     "[bad](javascript:alert(1)) " + ("unbroken" * 80)
                 ),
-                "recipient_ids": [], "recipient_handles": [], "chain_id": None, "notice": None,
+                "recipient_ids": [],
+                "recipient_handles": [],
+                "chain_id": None,
+                "notice": None,
             },
         ],
     }
@@ -595,7 +790,9 @@ This is **strong** and *emphasized* with `inline code` and [safe](https://exampl
     expect(body.locator("blockquote")).to_contain_text("A quoted note")
     expect(body.locator("pre code")).to_have_text("<literal & code>")
     expect(body.locator("table th")).to_have_count(2)
-    expect(body.get_by_role("link", name="safe")).to_have_attribute("href", "https://example.com/path")
+    expect(body.get_by_role("link", name="safe")).to_have_attribute(
+        "href", "https://example.com/path"
+    )
     expect(body.get_by_text("[Image: sunset]", exact=True)).to_be_visible()
     expect(page.locator(".message-text img")).to_have_count(0)
     expect(page.locator(".message-text a")).to_have_count(1)

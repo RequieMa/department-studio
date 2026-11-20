@@ -20,6 +20,7 @@ let modelRequest = null;
 let folderRequest = null;
 let folderListing = null;
 let composingMessage = false;
+let enterHandledUntilKeyup = false;
 let mentionState = { context: null, options: [], active: 0 };
 let mentionDismissedKey = null;
 let deleting = false;
@@ -679,21 +680,36 @@ $("#message-text").addEventListener("keyup", (event) => {
   if (!composingMessage && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) previewRecipients({ deliberate: true });
 });
 $("#message-text").addEventListener("keydown", (event) => {
-  if (composingMessage || event.isComposing) return;
+  // Some IMEs emit Enter after compositionend but mark that key event as 229.
+  if (composingMessage || event.isComposing || event.keyCode === 229) return;
+
+  // Let the textarea handle modified/newline keys itself. In particular, Shift
+  // takes precedence over an open mention list.
+  if (event.key === "Enter" && (event.shiftKey || event.altKey)) return;
+
   if (!$("#mention-menu").hidden) {
     if (event.key === "ArrowDown") { event.preventDefault(); setMentionActive(mentionState.active + 1); return; }
     if (event.key === "ArrowUp") { event.preventDefault(); setMentionActive(mentionState.active - 1); return; }
-    if ((event.key === "Enter" && !event.ctrlKey && !event.metaKey) || event.key === "Tab") {
+    if (((event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) || (event.key === "Tab" && !event.shiftKey)) && !event.repeat) {
       event.preventDefault();
       chooseMention();
+      // Do not turn a held Enter that chose a mention into a send after the
+      // menu closes. A new key press (after keyup) is deliberate.
+      if (event.key === "Enter") enterHandledUntilKeyup = true;
       return;
     }
     if (event.key === "Escape") { event.preventDefault(); dismissMentions({ remember: true }); return; }
   }
-  if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !$("#send").disabled) {
+
+  const submitsWithEnter = event.key === "Enter" && !event.altKey && (event.ctrlKey || event.metaKey || (!event.shiftKey && !event.ctrlKey && !event.metaKey));
+  if (submitsWithEnter) {
     event.preventDefault();
+    if (event.repeat || enterHandledUntilKeyup || $("#send").disabled || sending) return;
     $("#composer").requestSubmit();
   }
+});
+$("#message-text").addEventListener("keyup", (event) => {
+  if (event.key === "Enter") enterHandledUntilKeyup = false;
 });
 $("#composer").addEventListener("submit", async (event) => {
   event.preventDefault();
