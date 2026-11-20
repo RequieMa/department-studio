@@ -187,5 +187,61 @@ def test_real_single_choice_is_explicit_resolved_once_and_public(browser):
             assert detail["action_requests"][0]["resolution"]["option_id"] == "b"
             page.reload()
             expect(page.locator("#activity-count")).to_be_hidden()
+            page.locator("#task-select-" + task["id"]).click()
+            expect(page.locator("#task-decisions")).to_contain_text(
+                "Resolved decision · Approach B"
+            )
+            expect(page.locator("#task-decisions")).to_contain_text("Which approach <literal>?")
+            expect(page.locator("#task-decisions input")).to_have_count(0)
+        finally:
+            context.close()
+
+
+def test_blocked_decision_history_survives_closure_reopen_and_owner_deletion(browser):
+    with httpx.Client(base_url=ORIGIN, headers={"Authorization": "Bearer " + TOKEN}) as client:
+        client.post("/api/room/pause").raise_for_status()
+        owner = create_owner(client, "blocked_choice_real")
+        source = client.post(
+            "/api/messages", json={"text": "@blocked_choice_real Retained decision"}
+        ).json()
+        task = next(
+            task
+            for task in client.get("/api/tasks").json()["tasks"]
+            if task["source_message_id"] == source["message_id"]
+        )
+        client.post(
+            "/api/tasks/" + task["id"] + "/action-requests",
+            json={
+                "question": "Retain this unresolved choice?",
+                "options": [{"id": "a", "label": "Alpha"}, {"id": "b", "label": "Beta"}],
+                "task_revision": 1,
+                "idempotency_key": "browser-blocked-choice",
+            },
+        ).raise_for_status()
+        context = browser.new_context(viewport={"width": 1600, "height": 1000})
+        page = context.new_page()
+        try:
+            page.goto(ORIGIN + "/#token=" + TOKEN)
+            page.locator("#task-select-" + task["id"]).click()
+            history = page.locator("#task-decisions")
+            expect(history).to_contain_text("Retain this unresolved choice?")
+            expect(page.locator("#activity-count")).to_have_text("1")
+            page.get_by_role("button", name="Close task", exact=True).click()
+            expect(page.locator("#task-lifecycle")).to_have_text("Task closed")
+            expect(page.locator("#activity-count")).to_be_hidden()
+            expect(history).to_contain_text("Awaiting your decision")
+            page.get_by_role("button", name="Reopen task", exact=True).click()
+            expect(page.locator("#activity-count")).to_have_text("1")
+            client.delete(
+                "/api/leads/" + owner["id"], params={"revision": owner["revision"]}
+            ).raise_for_status()
+            expect(page.locator("#activity-count")).to_be_hidden()
+            expect(page.locator("#task-instruction-help")).to_contain_text("unavailable")
+            expect(history).to_contain_text("Retain this unresolved choice?")
+            page.reload()
+            page.locator("#task-select-" + task["id"]).click()
+            expect(history).to_contain_text("Awaiting your decision")
+            expect(history.locator("input")).to_have_count(0)
+            expect(page.locator("#activity-count")).to_be_hidden()
         finally:
             context.close()

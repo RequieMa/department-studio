@@ -81,7 +81,8 @@ The only Activity records are explicit unresolved, currently actionable requests
 
 - `POST /api/tasks/{id}/action-requests` (201): `{question,options:[{id,label}],
   source_message_id?,task_revision,idempotency_key}`. Question 1–2000; 2–8 distinct
-  option IDs (1–64), labels 1–300. Optional source must belong to this exact task.
+  option IDs (1–64), labels 1–300. Optional source must be null/omitted or a nonempty
+  message ID belonging to this exact task; empty or unrelated IDs are rejected.
 - `GET /api/action-requests?cursor=0&limit=100` → `{action_requests,next_cursor}`.
   Each includes `id,task_id,question,options,status,revision,source_message_id`,
   timestamps, resolution and current task summary. Limit 1–200.
@@ -110,7 +111,8 @@ Store/API/service tests use temporary SQLite and synthetic runtimes: shared budg
 exact sibling/peer provenance, strict owner boundary, immutable snapshots, FIFO,
 record-note/Pause/restart non-replay, retained deletion history, atomic resolution,
 rollback and controlled two-connection delete/Pause/close/retry/resolution races.
-See final integration evidence for combined frontend/browser/package results.
+See [combined integration evidence](../docs/task-integration.md) for frontend,
+browser/package results and the remaining dirty-root merge blocker.
 
 Before human relaunch: stop all writers, back up the entire actual persistent data
 and native sessions, use the same absolute `--data-dir`, and do not downgrade after
