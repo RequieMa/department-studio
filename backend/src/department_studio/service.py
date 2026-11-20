@@ -61,6 +61,16 @@ class RoomService:
         self._wake.set()
         return receipt
 
+    def post_task_instruction(self, task_id: str, **body) -> dict:
+        receipt = self.store.post_task_instruction(task_id, **body)
+        self._wake.set()
+        return receipt
+
+    def resolve_action_request(self, request_id: str, **body) -> dict:
+        receipt = self.store.resolve_action_request(request_id, **body)
+        self._wake.set()
+        return receipt
+
     def knows_bridge_token(self, token: str) -> bool:
         return token in self._tokens or token in self._revoked
 
@@ -107,6 +117,7 @@ class RoomService:
         history, omitted = self.store.recent_messages(50)
         data = {
             "correlation_id": chain.id,
+            "task": self.store.task_context_for_delivery(delivery.id),
             "input": asdict(message),
             "human_request": asdict(self.store.get_message(chain.root_message_id)),
             "recent_messages": [asdict(m) for m in history],

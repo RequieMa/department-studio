@@ -18,6 +18,8 @@ from department_studio.folders import browse_folders
 from department_studio.security import OwnerCredential, allowed_request
 from department_studio.service import RoomService
 from department_studio.store import Store
+from department_studio.task_api import router as task_router
+from department_studio.tasks import TaskConflict
 
 SECURITY_HEADERS = {
     "Cache-Control": "no-store",
@@ -96,6 +98,7 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.owner = owner
+    app.include_router(task_router)
 
     @app.middleware("http")
     async def local_access(request: Request, call_next):
@@ -138,7 +141,10 @@ def create_app(
 
     @app.exception_handler(Conflict)
     async def conflict_handler(request, exc):
-        return JSONResponse({"detail": str(exc)}, status_code=409)
+        content = {"detail": str(exc)}
+        if isinstance(exc, TaskConflict):
+            content["code"] = exc.code
+        return JSONResponse(content, status_code=409)
 
     @app.exception_handler(NotFound)
     async def missing_handler(request, exc):
@@ -240,6 +246,10 @@ def create_app(
     @app.get("/app.js")
     async def javascript():
         return FileResponse(static / "app.js", media_type="text/javascript")
+
+    @app.get("/tasks.js")
+    async def tasks_javascript():
+        return FileResponse(static / "tasks.js", media_type="text/javascript")
 
     @app.get("/style.css")
     async def stylesheet():

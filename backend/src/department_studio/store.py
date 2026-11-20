@@ -25,6 +25,7 @@ from department_studio.domain import (
     message_text,
     normalize_handle,
 )
+from department_studio.tasks import TASK_SCHEMA, TaskStore
 
 _ACTIVE = "('running', 'stopping')"
 _BUSY = "('queued', 'running', 'stopping')"
@@ -81,7 +82,7 @@ def _stop_cause(error: str) -> str:
     return error.split("; awaiting confirmed stop")[0].rstrip(".")
 
 
-class Store:
+class Store(TaskStore):
     def __init__(self, path: Path, *, max_chain_deliveries: int = 8):
         if type(max_chain_deliveries) is not int or max_chain_deliveries <= 0:
             raise Invalid("Delivery allowance must be a positive integer.")
@@ -104,6 +105,11 @@ class Store:
                             self._db.execute(statement)
                     self._db.execute("ALTER TABLE leads ADD COLUMN deleted_at TEXT")
                     self._db.execute("PRAGMA user_version=1")
+                if self._schema_version() == 1:
+                    for statement in TASK_SCHEMA.split(";"):
+                        if statement.strip():
+                            self._db.execute(statement)
+                    self._db.execute("PRAGMA user_version=2")
             self._db.execute("PRAGMA journal_mode=WAL")
         except BaseException:
             self._db.close()
@@ -111,7 +117,7 @@ class Store:
 
     def _schema_version(self) -> int:
         version = self._db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1}:
+        if version not in {0, 1, 2}:
             raise RuntimeError("Unsupported database schema version; use a compatible release.")
         return version
 
@@ -278,6 +284,9 @@ class Store:
         recipients: list[str],
         chain_id: str | None,
         notice: str | None = None,
+        *,
+        task_id: str | None = None,
+        source_delivery_id: str | None = None,
     ) -> str:
         message_id = str(uuid4())
         labels = [self.get_lead(lead_id).handle for lead_id in recipients]
@@ -299,9 +308,18 @@ class Store:
                 notice,
             ),
         )
+        self._link_task_message(task_id, message_id, source_delivery_id)
         return message_id
 
-    def _enqueue(self, chain_id: str, message_id: str, recipients: list[str]) -> Receipt:
+    def _enqueue(
+        self,
+        chain_id: str,
+        message_id: str,
+        recipients: list[str],
+        *,
+        task_ids: dict[str, str] | None = None,
+        task_snapshot: dict | None = None,
+    ) -> Receipt:
         # All callers hold the same write transaction used for deletion and claiming.
         leads = [self.get_lead(lead_id) for lead_id in recipients]
         notice = None
@@ -322,12 +340,13 @@ class Store:
             "UPDATE chains SET reserved=reserved+? WHERE id=?", (len(recipients), chain_id)
         )
         for lead in leads:
+            delivery_id = str(uuid4())
             self._db.execute(
                 "INSERT INTO "
                 "deliveries(id,chain_id,message_id,lead_id,conversation_id,state,created_at)"
                 " VALUES(?,?,?,?,?,'queued',?)",
                 (
-                    str(uuid4()),
+                    delivery_id,
                     chain_id,
                     message_id,
                     lead.id,
@@ -335,6 +354,7 @@ class Store:
                     _now(),
                 ),
             )
+            self._link_task_delivery((task_ids or {}).get(lead.id), delivery_id, task_snapshot)
         return Receipt(message_id, recipients)
 
     def post_human_message(self, text: str) -> Receipt:
@@ -350,7 +370,8 @@ class Store:
             self._db.execute(
                 "UPDATE chains SET root_message_id=? WHERE id=?", (message_id, chain_id)
             )
-            return self._enqueue(chain_id, message_id, recipients)
+            task_ids = self._create_root_tasks(message_id, chain_id, recipients, text)
+            return self._enqueue(chain_id, message_id, recipients, task_ids=task_ids)
 
     def _is_current(self, delivery_id: str, generation: int) -> bool:
         return (
@@ -393,8 +414,23 @@ class Store:
             delivery = self.get_delivery(delivery_id)
             sender = self.get_lead(delivery.lead_id)
             selected = [i for i in self._resolve_handles(handles, human=False) if i != sender.id]
-            message_id = self._insert_message(sender, text, selected, delivery.chain_id)
-            receipt = self._enqueue(delivery.chain_id, message_id, selected)
+            task_context = self.task_context_for_delivery(delivery_id)
+            task_id = task_context["id"] if task_context else None
+            message_id = self._insert_message(
+                sender,
+                text,
+                selected,
+                delivery.chain_id,
+                task_id=task_id,
+                source_delivery_id=delivery_id,
+            )
+            receipt = self._enqueue(
+                delivery.chain_id,
+                message_id,
+                selected,
+                task_ids={lead_id: task_id for lead_id in selected} if task_id else None,
+                task_snapshot=task_context,
+            )
             self._db.execute(
                 "INSERT INTO receipts VALUES(?,?,?,?)",
                 (delivery_id, call_id, fingerprint, json.dumps(asdict(receipt))),
@@ -525,8 +561,15 @@ class Store:
                         + "\n[Response truncated; inspect the native session for the full reply.]"
                     )
                     notice = "Public response exceeded the room message limit."
+                task_context = self.task_context_for_delivery(delivery_id)
                 self._insert_message(
-                    self.get_lead(delivery.lead_id), text, [], delivery.chain_id, notice
+                    self.get_lead(delivery.lead_id),
+                    text,
+                    [],
+                    delivery.chain_id,
+                    notice,
+                    task_id=task_context["id"] if task_context else None,
+                    source_delivery_id=delivery_id,
                 )
             return True
 

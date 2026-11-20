@@ -71,7 +71,7 @@ def test_v0_migration_retains_every_existing_field_and_is_repeatable(tmp_path):
         assert store.get_lead("lead").deleted_at is None
         assert store.list_session_refs("lead")[0]["native_session_ref"] == "native-reference"
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         for table, (columns, rows) in before.items():
             assert (
@@ -84,18 +84,18 @@ def test_v0_migration_retains_every_existing_field_and_is_repeatable(tmp_path):
     assert table_snapshot(path) == migrated
 
 
-def test_new_database_has_version_one_and_nullable_tombstone(tmp_path):
+def test_new_database_has_version_two_and_nullable_tombstone(tmp_path):
     path = tmp_path / "new.sqlite"
     with Store(path):
         pass
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         columns = {r[1]: r for r in db.execute("PRAGMA table_info(leads)")}
         assert columns["deleted_at"][2:4] == ("TEXT", 0)
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-@pytest.mark.parametrize("version", [2, 999, -1])
+@pytest.mark.parametrize("version", [3, 999, -1])
 def test_unknown_version_rejected_before_schema_or_journal_writes(tmp_path, version):
     path = tmp_path / "future.sqlite"
     with sqlite3.connect(path) as db:
@@ -145,3 +145,54 @@ def test_migration_failure_rolls_back_schema_and_version_and_closes_connection(
         connections[0].execute("SELECT 1")
     with Store(path):
         pass
+
+
+def version_one_database(path, workspace):
+    legacy_database(path, workspace)
+    with sqlite3.connect(path) as db:
+        db.execute("ALTER TABLE leads ADD COLUMN deleted_at TEXT")
+        db.execute("UPDATE leads SET deleted_at='historical tombstone'")
+        db.execute("PRAGMA user_version=1")
+    return path
+
+
+def test_v1_to_v2_preserves_tombstones_sessions_and_has_no_historical_backfill(tmp_path):
+    path = version_one_database(tmp_path / "v1.sqlite", tmp_path)
+    before = table_snapshot(path)
+    with Store(path) as store:
+        assert store.list_tasks()["tasks"] == []
+        assert store.list_action_requests()["action_requests"] == []
+        assert store.task_context_for_delivery("delivery") is None
+        assert store.get_lead("lead", include_deleted=True).deleted_at == "historical tombstone"
+    assert table_snapshot(path) == before
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize("version", [0, 1])
+def test_v2_migration_failure_rolls_back_entire_upgrade(tmp_path, monkeypatch, version):
+    path = tmp_path / "failed.sqlite"
+    (version_one_database if version else legacy_database)(path, tmp_path)
+    before = table_snapshot(path)
+    connect = sqlite3.connect
+
+    class FaultyConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql.strip().upper() == "PRAGMA USER_VERSION=2":
+                raise sqlite3.OperationalError("synthetic v2 failure")
+            return super().execute(sql, *args, **kwargs)
+
+    def faulty_connect(*args, **kwargs):
+        return connect(*args, **kwargs, factory=FaultyConnection)
+
+    with monkeypatch.context() as patch:
+        patch.setattr("department_studio.store.sqlite3.connect", faulty_connect)
+        with pytest.raises(sqlite3.OperationalError, match="synthetic v2"):
+            Store(path)
+    assert table_snapshot(path) == before
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == version
+        assert not db.execute("SELECT name FROM sqlite_master WHERE name='tasks'").fetchall()
+    with Store(path) as store:
+        assert store.list_tasks()["tasks"] == []
