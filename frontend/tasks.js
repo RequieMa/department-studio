@@ -179,7 +179,10 @@ export function createTaskUI({ request, refreshRoom, viewMessage }) {
     const generation = ++detailGeneration;
     try {
       let cursor = null;
-      const combined = { messages: [], deliveries: [], instructions: [], deliveries_truncated: false };
+      const combined = {
+        messages: [], deliveries: [], instructions: [], action_requests: [],
+        deliveries_truncated: false, action_requests_truncated: false,
+      };
       for (let page = 0; page < detailPages; page += 1) {
         const data = await request(`/api/tasks/${encodeURIComponent(id)}?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
         if (id !== selected || generation !== detailGeneration) return;
@@ -187,7 +190,9 @@ export function createTaskUI({ request, refreshRoom, viewMessage }) {
         combined.messages.push(...data.messages);
         combined.deliveries.push(...data.deliveries);
         combined.instructions.push(...data.instructions);
+        combined.action_requests.push(...(data.action_requests || []));
         combined.deliveries_truncated ||= data.deliveries_truncated;
+        combined.action_requests_truncated ||= data.action_requests_truncated;
         cursor = data.next_cursor;
         if (!cursor) break;
       }
@@ -246,8 +251,33 @@ export function createTaskUI({ request, refreshRoom, viewMessage }) {
       if (!unique.size) fragment.append(make("li", "field-help", "No instructions yet."));
       list.replaceChildren(fragment);
     }
+    const decisions = new Map((detail.action_requests || []).map((item) => [item.id, item]));
+    const decisionList = $("#task-decisions");
+    const decisionSignature = JSON.stringify([...decisions.values()]);
+    if (decisionList.dataset.signature !== decisionSignature) {
+      decisionList.dataset.signature = decisionSignature;
+      const fragment = document.createDocumentFragment();
+      for (const decision of decisions.values()) {
+        const selected = decision.options?.find((option) => option.id === decision.resolution?.option_id);
+        const state = decision.status === "resolved"
+          ? `Resolved decision${selected ? ` · ${selected.label}` : ""}`
+          : "Awaiting your decision";
+        const row = make("li");
+        row.append(make("strong", "task-decision-status", state), make("p", "", decision.question));
+        if (decision.status === "resolved" && !selected) {
+          row.append(make("p", "field-help", "The selected option is unavailable in this retained record."));
+        }
+        fragment.append(row);
+      }
+      if (!decisions.size) fragment.append(make("li", "field-help", "No decisions requested for this task."));
+      decisionList.replaceChildren(fragment);
+    }
     $("#task-history-more").hidden = !historyCursor;
-    setText($("#task-history-status"), detail.deliveries_truncated ? "Some linked deliveries are omitted from this context page; task totals above include all runs." : historyCursor ? "More public context and instructions are available." : "");
+    const historyNotes = [];
+    if (detail.deliveries_truncated) historyNotes.push("Some linked deliveries are omitted from this context page; task totals above include all runs.");
+    if (detail.action_requests_truncated) historyNotes.push("Only the most recent 200 retained decisions are shown.");
+    if (historyCursor) historyNotes.push("More public context and instructions are available.");
+    setText($("#task-history-status"), historyNotes.join(" "));
     const context = $("#task-messages");
     const messages = detail.messages || [];
     const contextKey = JSON.stringify(messages);
