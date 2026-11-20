@@ -85,13 +85,13 @@ def test_installed_artifact_imports_and_assets_ignore_source_pythonpath(
 import hashlib, json, sys
 from importlib.metadata import distribution
 from pathlib import Path
-from department_studio import api, domain, store
+from department_studio import api, domain, store, task_api, tasks
 package = Path(api.__file__).resolve().parent
 installed = distribution('department-studio')
 assert package == Path(installed.locate_file('department_studio')).resolve()
 assert json.loads(installed.read_text('direct_url.json'))['url'] == Path(sys.argv[1]).as_uri()
-paths = [Path(module.__file__).resolve() for module in (api, domain, store)]
-paths += [package / 'static' / name for name in ('index.html', 'app.js', 'style.css')]
+paths = [Path(module.__file__).resolve() for module in (api, domain, store, task_api, tasks)]
+paths += [package / 'static' / name for name in ('index.html', 'app.js', 'tasks.js', 'style.css')]
 assert all(path.is_relative_to(package) for path in paths)
 assert 'site-packages' in package.parts
 print(json.dumps({str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -112,8 +112,11 @@ print(json.dumps({str(path.relative_to(package)): hashlib.sha256(path.read_bytes
                 "api.py",
                 "domain.py",
                 "store.py",
+                "task_api.py",
+                "tasks.py",
                 "static/index.html",
                 "static/app.js",
+                "static/tasks.js",
                 "static/style.css",
             )
         }
@@ -124,6 +127,7 @@ def test_built_wheel_contains_ui_bridge_and_a_working_cli(built_wheel, tmp_path)
         assert {
             "department_studio/static/index.html",
             "department_studio/static/app.js",
+            "department_studio/static/tasks.js",
             "department_studio/static/style.css",
             "department_studio/pi_extension.ts",
         } <= set(archive.namelist())
@@ -171,14 +175,29 @@ async def test_wheel_cli_serves_authenticated_room_outside_repository(built_whee
                     "messages": [],
                     "deliveries": [],
                 }
+                headers = {"Authorization": "Bearer " + owner}
+                assert (await client.get("/api/tasks", headers=headers)).json() == {
+                    "tasks": [],
+                    "next_cursor": None,
+                    "open_count": 0,
+                }
+                assert (await client.get("/api/action-requests", headers=headers)).json() == {
+                    "action_requests": [],
+                    "next_cursor": None,
+                }
                 page = await client.get("/")
                 assert page.status_code == 200 and "Department Studio" in page.text
-                assert (await client.get("/app.js")).status_code == 200
+                app_js = await client.get("/app.js")
+                assert app_js.status_code == 200 and '"./tasks.js"' in app_js.text
+                tasks_js = await client.get("/tasks.js")
+                assert tasks_js.status_code == 200
+                assert tasks_js.headers["content-type"].startswith("text/javascript")
                 assert (await client.get("/style.css")).status_code == 200
                 with zipfile.ZipFile(built_wheel) as archive:
                     for url, name in (
                         ("/", "index.html"),
                         ("/app.js", "app.js"),
+                        ("/tasks.js", "tasks.js"),
                         ("/style.css", "style.css"),
                     ):
                         assert (await client.get(url)).content == archive.read(

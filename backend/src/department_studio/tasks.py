@@ -541,7 +541,7 @@ class TaskStore:
                 return replay
             self._check_task(task_id, task_revision)
             if (
-                source_message_id
+                source_message_id is not None
                 and not self._db.execute(
                     "SELECT 1 FROM task_messages WHERE task_id=? AND message_id=?",
                     (task_id, source_message_id),

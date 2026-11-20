@@ -58,7 +58,7 @@ def test_real_task_tree_note_fifo_draft_pause_and_reload(browser):
             expect(page.locator("#task-context")).to_contain_text("<script>literal</script>")
             page.get_by_role("button", name="Create subtask", exact=True).click()
             page.get_by_label("Subtask title", exact=True).fill("Child <safe>")
-            page.get_by_label("Responsible department", exact=True).select_option(second["id"])
+            page.locator("#task-child-owner").select_option(second["id"])
             page.get_by_label("Subtask context", exact=True).fill("Durable child context")
             with page.expect_response(
                 lambda response: (

@@ -43,7 +43,7 @@ class Choice(TaskBody):
 class ActionBody(TaskBody):
     question: str = Field(min_length=1, max_length=2000)
     options: list[Choice] = Field(min_length=2, max_length=8)
-    source_message_id: str | None = Field(default=None, max_length=200)
+    source_message_id: str | None = Field(default=None, min_length=1, max_length=200)
     task_revision: int = Field(ge=1)
     idempotency_key: str = Field(min_length=1, max_length=128)
 
