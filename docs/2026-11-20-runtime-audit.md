@@ -10,12 +10,39 @@ deliveries, and had unheld Studio locks during inspection.
 | Item | Finding | Decision |
 |---|---|---|
 | Stash `31b315e4f0a05f1cc73173530e9800c23d709abd` | Four-file frontend draft; 297 additions and 43 deletions. Its named functions and browser test remain represented in the integrated frontend, which also includes later repairs. It is not byte-identical to main. | Functionally superseded, but small and explicitly protected. Retain until the human explicitly discards it; do not apply it over current fixes. |
-| `.worktrees/bootstrap/` | Separate repository at `b99a206`; its source commits are ancestors of root main. Its v0 room contains 104 messages and four native conversations. None of those message IDs occurs in the newer room. | Keep: it contains unique history, not just duplicate source. |
+| `.worktrees/bootstrap/` | Separate repository at `b99a206`; its source commits are ancestors of root main. Its v0 room contains 104 messages and four native conversations. None of those message IDs occurs in the newer room. | Subsequently archived and removed after a fresh dependency check; preserve the private archive described below. |
 | `integration/bootstrap` | Historical import label; no branch with this name remains. The imported commits remain in root main. | No branch cleanup is needed. Deleting a ref would never substitute for auditing the separate repository. |
 | `/home/zengma/.codex/worktrees/9201/department-studio` | Listed in root's Git metadata as an external linked worktree. | Contents not inspected or modified, as requested. |
 | `.worktrees/backend-tasks/` | Two commits beyond main: `2dcf7fd`, `54cf1a6`. | Keep unfinished/unintegrated task implementation. |
 | `.worktrees/frontend-ongoing-tasks/` | Three modified frontend files and untracked `frontend/tasks.js`. | Keep unfinished work; these are real edits, including work retained after interrupted runs. |
-| `live-demo/` | Current v1 room: 121 messages and four native conversations, including the reported failures. | Keep as the actual current data directory. It is distinct from the bootstrap room. |
+| `live-demo/` | At the initial audit, v1 room: 121 messages and four native conversations, including the reported failures. | Keep as the actual current data directory. It is distinct from the bootstrap room. |
+
+## Bootstrap cleanup follow-up
+
+On November 20, the bootstrap checkout was retired after a fresh inspection. Its
+source was clean, every Git ref was already integrated into root `main`, and Git
+reported no unreachable objects. Root Git configuration and object storage did not
+depend on that repository. The current v2 demo had no configured workspace or saved
+native session under the bootstrap path. The old room was paused with no pending or
+active deliveries; its Studio lock was held during backup and removal.
+
+The private, git-ignored archive is
+`artifacts/bootstrap-retirement-2026-11-20-bn0s_ut6/` (about 5.3 MiB, directory mode
+0700). It contains the repository, all 104 old messages, four native session files,
+build outputs and verification artifacts. An additional standalone SQLite backup,
+file-hash manifest, checksums and `README.md` restore instructions are included.
+Only the regenerable uv environment and Python/test/lint caches were excluded.
+
+A complete temporary restore verified all 181 preserved files and their permissions,
+the clean Git checkout and original HEAD, `git fsck --full`, every database table,
+SQLite integrity, and all four saved native session files. Restore with
+`tar --same-permissions` as documented so private directory and Git object modes
+are preserved. The original directory was removed only after this verification and
+a second unchanged-source/dependency check. Restoring to the original path preserves
+native-session references; recreate its environment with `uv sync --locked` if needed.
+
+The current demo was not restarted or reconfigured. The protected stash, external
+linked worktree and unfinished department worktrees were outside this cleanup.
 
 ## Redundant checkouts and the cleanup limit
 

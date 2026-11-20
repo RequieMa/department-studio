@@ -41,7 +41,7 @@ Use the exact printed address: other Host headers and browser origins are reject
 
 The backend serves `frontend/` in editable checkouts. Wheels bundle the same assets under `department_studio/static/`, so an installed CLI also works outside the repository. Frontend/backend remain one same-origin application; this split does not change authentication, permissions or stop behavior.
 
-For the preserved bootstrap checkout and a human-controlled runtime switch, see [root checkout integration](docs/root-integration.md). For the subsequent deletion/UI integration, combined test evidence and required pre-relaunch backup, see [relaunch integration](docs/relaunch-integration.md).
+For the archived bootstrap room and its restore process, see [root checkout integration](docs/root-integration.md). For the subsequent deletion/UI integration, combined test evidence and required pre-relaunch backup, see [relaunch integration](docs/relaunch-integration.md).
 
 ## Configure departments
 

@@ -3,7 +3,9 @@
 For the existing November 20 room and frontend failures, use the
 [runtime audit and recovery instructions](2026-11-20-runtime-audit.md). That room uses
 the root `live-demo/` directory. The bootstrap data path below belongs to the earlier,
-separate demonstration and is retained as historical preparation guidance.
+separate demonstration and is retained as historical preparation guidance. That
+checkout was archived and removed on November 20; follow the
+[bootstrap restore instructions](root-integration.md) before using its historical paths.
 
 The root application now performs [context maintenance on Resume](resume-context.md).
 Restart the root server to load it, click **Resume room**, wait for **Room running**,
