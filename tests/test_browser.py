@@ -432,6 +432,86 @@ def test_delete_department_confirmation_uses_revision_and_blocks_busy_department
     context.close()
 
 
+def test_message_bodies_render_safe_markdown_and_history_after_reload(browser):
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    markdown = """# Release notes
+
+This is **strong** and *emphasized* with `inline code` and [safe](https://example.com/path).
+
+- first
+- second
+
+1. one
+2. two
+
+> A quoted note
+
+```text
+<literal & code>
+```
+
+| Column | Value |
+| --- | --- |
+| long | content |
+
+![sunset](https://example.com/image.png)"""
+    room_state = {
+        "paused": True,
+        "leads": [],
+        "deliveries": [],
+        "messages": [
+            {
+                "id": "markdown", "sender_id": "atlas", "sender_name": "Atlas",
+                "sender_kind": "lead", "sender_handle": "atlas",
+                "timestamp": "2026-11-20T04:00:00+00:00", "text": markdown,
+                "recipient_ids": [], "recipient_handles": [], "chain_id": None, "notice": None,
+            },
+            {
+                "id": "literal", "sender_id": "atlas", "sender_name": "Atlas",
+                "sender_kind": "lead", "sender_handle": "atlas",
+                "timestamp": "2026-11-20T04:01:00+00:00",
+                "text": (
+                    "<img src=x onerror=window.markdownXss=true> "
+                    "[bad](javascript:alert(1)) " + ("unbroken" * 80)
+                ),
+                "recipient_ids": [], "recipient_handles": [], "chain_id": None, "notice": None,
+            },
+        ],
+    }
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    body = page.locator(".message-text").first
+    expect(body.get_by_role("heading", name="Release notes")).to_be_visible()
+    expect(body.locator("strong")).to_have_text("strong")
+    expect(body.locator("em")).to_have_text("emphasized")
+    expect(body.locator("ul li")).to_have_count(2)
+    expect(body.locator("ol li")).to_have_count(2)
+    expect(body.locator("blockquote")).to_contain_text("A quoted note")
+    expect(body.locator("pre code")).to_have_text("<literal & code>")
+    expect(body.locator("table th")).to_have_count(2)
+    expect(body.get_by_role("link", name="safe")).to_have_attribute("href", "https://example.com/path")
+    expect(body.get_by_text("[Image: sunset]", exact=True)).to_be_visible()
+    expect(page.locator(".message-text img")).to_have_count(0)
+    expect(page.locator(".message-text a")).to_have_count(1)
+    expect(
+        page.get_by_text("<img src=x onerror=window.markdownXss=true>", exact=False)
+    ).to_be_visible()
+    assert page.evaluate("window.markdownXss") is None
+    literal_body = page.locator(".message-text").nth(1)
+    assert literal_body.evaluate("node => node.scrollWidth <= node.clientWidth")
+    page.reload()
+    expect(
+        page.locator(".message-text").first.get_by_role("heading", name="Release notes")
+    ).to_be_visible()
+    context.close()
+
+
 def test_workspace_folder_picker_error_recovery_and_mobile_focus(browser):
     context = browser.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce")
     page = context.new_page()

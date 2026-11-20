@@ -120,6 +120,166 @@ function renderRoster() {
   }
 }
 
+function safeLink(value) {
+  try {
+    const url = new URL(value, location.origin);
+    return ["http:", "https:", "mailto:"].includes(url.protocol) ? url.href : null;
+  } catch { return null; }
+}
+
+function appendMarkdownInline(parent, source) {
+  const token = /(!?\[[^\]]*\]\([^\n)]*\)|`[^`]*`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g;
+  let cursor = 0;
+  for (const match of source.matchAll(token)) {
+    if (match.index > cursor) parent.append(document.createTextNode(source.slice(cursor, match.index)));
+    const value = match[0];
+    const link = /^(!?)\[([^\]]*)\]\(([^\n)]*)\)$/.exec(value);
+    if (link) {
+      if (link[1]) {
+        parent.append(element("span", "markdown-image-alt", `[Image: ${link[2]}]`));
+      } else {
+        const href = safeLink(link[3].trim());
+        if (href) {
+          const anchor = element("a", "markdown-link");
+          anchor.href = href;
+          anchor.target = "_blank";
+          anchor.rel = "noopener noreferrer";
+          appendMarkdownInline(anchor, link[2]);
+          parent.append(anchor);
+        } else parent.append(document.createTextNode(link[2]));
+      }
+    } else if (value.startsWith("`")) {
+      parent.append(element("code", "markdown-inline-code", value.slice(1, -1)));
+    } else if (value.startsWith("**") || value.startsWith("__")) {
+      const strong = document.createElement("strong");
+      appendMarkdownInline(strong, value.slice(2, -2));
+      parent.append(strong);
+    } else {
+      const emphasis = document.createElement("em");
+      appendMarkdownInline(emphasis, value.slice(1, -1));
+      parent.append(emphasis);
+    }
+    cursor = match.index + value.length;
+  }
+  if (cursor < source.length) parent.append(document.createTextNode(source.slice(cursor)));
+}
+
+function markdownTableCells(line) {
+  const trimmed = line.trim().replace(/^\||\|$/g, "");
+  return trimmed.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, "|").trim());
+}
+
+function isMarkdownTableDivider(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function markdownBlockStart(line, next) {
+  return /^ {0,3}(```|~~~)/.test(line) || /^(#{1,6})\s+/.test(line) || /^> ?/.test(line)
+    || /^\s*[-*+]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line) || isMarkdownTableDivider(next || "");
+}
+
+function appendMarkdownTable(parent, headerLine, lines, start) {
+  const wrapper = element("div", "markdown-table-wrap");
+  const table = document.createElement("table");
+  const head = document.createElement("thead");
+  const header = document.createElement("tr");
+  markdownTableCells(headerLine).forEach((cell) => {
+    const column = document.createElement("th");
+    appendMarkdownInline(column, cell);
+    header.append(column);
+  });
+  head.append(header);
+  table.append(head);
+  const body = document.createElement("tbody");
+  let index = start + 2;
+  while (index < lines.length && lines[index].includes("|")) {
+    const row = document.createElement("tr");
+    markdownTableCells(lines[index]).forEach((cell) => {
+      const column = document.createElement("td");
+      appendMarkdownInline(column, cell);
+      row.append(column);
+    });
+    body.append(row);
+    index += 1;
+  }
+  table.append(body);
+  wrapper.append(table);
+  parent.append(wrapper);
+  return index;
+}
+
+function appendMarkdownBlocks(parent, source) {
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  let index = 0;
+  while (index < lines.length) {
+    if (!lines[index].trim()) { index += 1; continue; }
+    const fence = /^ {0,3}(```|~~~)/.exec(lines[index]);
+    if (fence) {
+      const close = new RegExp(`^ {0,3}${fence[1]}\\s*$`);
+      const start = ++index;
+      while (index < lines.length && !close.test(lines[index])) index += 1;
+      const pre = document.createElement("pre");
+      pre.className = "markdown-code-block";
+      pre.append(element("code", "", lines.slice(start, index).join("\n")));
+      parent.append(pre);
+      if (index < lines.length) index += 1;
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.*)$/.exec(lines[index]);
+    if (heading) {
+      const node = document.createElement(`h${heading[1].length}`);
+      appendMarkdownInline(node, heading[2]);
+      parent.append(node);
+      index += 1;
+      continue;
+    }
+    if (isMarkdownTableDivider(lines[index + 1] || "")) {
+      index = appendMarkdownTable(parent, lines[index], lines, index);
+      continue;
+    }
+    if (/^> ?/.test(lines[index])) {
+      const quoted = [];
+      while (index < lines.length && /^> ?/.test(lines[index])) {
+        quoted.push(lines[index].replace(/^> ?/, ""));
+        index += 1;
+      }
+      const quote = document.createElement("blockquote");
+      appendMarkdownBlocks(quote, quoted.join("\n"));
+      parent.append(quote);
+      continue;
+    }
+    const list = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[index]);
+    if (list) {
+      const ordered = /\d/.test(list[2]);
+      const node = document.createElement(ordered ? "ol" : "ul");
+      while (index < lines.length) {
+        const item = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[index]);
+        if (!item || /\d/.test(item[2]) !== ordered) break;
+        const entry = document.createElement("li");
+        appendMarkdownInline(entry, item[3]);
+        node.append(entry);
+        index += 1;
+      }
+      parent.append(node);
+      continue;
+    }
+    const paragraph = [];
+    while (index < lines.length && lines[index].trim() && !markdownBlockStart(lines[index], lines[index + 1])) {
+      paragraph.push(lines[index]);
+      index += 1;
+    }
+    if (!paragraph.length) paragraph.push(lines[index++]);
+    const node = document.createElement("p");
+    appendMarkdownInline(node, paragraph.join("\n"));
+    parent.append(node);
+  }
+}
+
+function renderMarkdownBody(node, source) {
+  node.replaceChildren();
+  appendMarkdownBlocks(node, source);
+}
+
 function renderMessages() {
   const conversation = $("#conversation");
   const nearBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 80;
@@ -145,7 +305,9 @@ function renderMessages() {
         element("span", "message-handle", message.sender_kind === "human" ? "You · project lead" : `Department · @${message.sender_handle}`),
       );
       header.append(avatar, identity, time);
-      article.append(header, element("div", "message-text", message.text));
+      const body = element("div", "message-text");
+      renderMarkdownBody(body, message.text);
+      article.append(header, body);
       if (message.recipient_handles?.length) {
         article.append(element("div", "recipient-label", `To ${message.recipient_handles.map((handle) => `@${handle}`).join(", ")}`));
       }
