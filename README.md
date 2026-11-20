@@ -2,7 +2,7 @@
 
 A local shared room where **you are the project lead**. Create your own departments, choose each lead's role, exact model and workspace, and address them in one persistent conversation. There are no built-in departments or autonomous AI manager.
 
-This is the communication bootstrap described in `docs/superpowers/specs/2026-11-19-bootstrap-design.md`. It has a runtime-neutral Python core, a Pi RPC adapter, SQLite persistence, and a browser interface without a frontend build step. A2A, worker fleets and task ownership boards are deferred.
+This is the communication bootstrap described in `docs/superpowers/specs/2026-11-19-bootstrap-design.md`. It has a runtime-neutral Python core, a Pi RPC adapter, SQLite persistence, and a browser interface without a frontend build step. It also includes a persistent Ongoing tasks map with human-created branches and owner-targeted instructions. A2A, worker fleets and task ownership transfer remain deferred.
 
 **Live model-backed collaboration has not been demonstrated.** Automated replies are explicitly synthetic test fixtures. Independent subagent spec and quality reviews were unavailable; the user authorized continuing TDD directly. See `docs/verification.md` for evidence and remaining checks.
 
@@ -68,7 +68,17 @@ Leads receive the attributed request, the originating human request and the late
 
 The `send_room_message` tool posts public text and optional explicit recipient handles. Its acknowledgement confirms storage, not recipient completion. The host supplies the sender identity and accepts calls only from an active delivery's credential. Retrying the same tool call cannot duplicate a message or delivery. Final assistant text is public; mentions inside a final response do not trigger work. Private reasoning, raw tool results and complete native transcripts are not broadcast.
 
-Each human request permits **eight deliveries total**, including the initial recipients and peer follow-ups. If a whole recipient set will not fit, the message remains visible with a notice and no partial fan-out. Self-addressing does not enqueue work. Studio permits at most two active leads and one delivery per lead. Each run has a five-minute deadline; these limits are not spending guarantees.
+Each human request permits **eight deliveries total**, including the initial recipients and peer follow-ups. If a whole recipient set will not fit, the message remains visible with a notice and no partial fan-out. Self-addressing does not enqueue work. Studio permits at most two active leads and one delivery per lead. Each run currently has a five-minute deadline; these limits are not spending guarantees. A progress-aware watchdog replacing the short total deadline is [documented for later implementation](docs/watchdog-follow-up.md), not enabled in this release.
+
+## Ongoing tasks and human decisions
+
+The collapsible **right-hand Ongoing tasks** panel shows a branching task map (a modal drawer on smaller screens). New addressed room messages create one root per recipient; **Create subtask** adds explicit child metadata without starting execution. Existing room history is not backfilled. Selecting a node shows its public context, owner and instruction history.
+
+Instructions target that node's stable department ID; mentions inside them do not add recipients. **Queue instruction** follows existing work without interrupting it. **Record note**, offered while paused/stopping, creates no delivery and never sends automatically on Resume. Retrying an uncertain submission does not duplicate execution. Task closure is a human action, separate from a completed run, and is blocked while linked work is queued/running/stopping.
+
+**Run Activity** shows only explicit unresolved, currently actionable human requests—not routine run completions or completion toasts. Persisted single-choice requests present radio options and atomically record the selected choice with a public task follow-up. Request authoring is available through the **owner API only** in v1; departments do not automatically create selectors from their prose, so an empty Activity feed is normal. Closed/unavailable targets retain decision history in task details but leave the actionable feed.
+
+See [backend/TASKS.md](backend/TASKS.md) for APIs, idempotency, lifecycle, pagination and migration details. This feature applies an additive **schema v2 migration on Store open**. Stop writers and back up the full persistent data/native sessions before upgrading; use the same absolute data directory and do not downgrade afterward. A port-bind failure does not guarantee the database was untouched: the current CLI opens Store before binding.
 
 ## Discuss, Develop and manual continuation
 
