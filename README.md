@@ -64,7 +64,7 @@ illustrative replies are clearly separated from real model output.
 
 An unaddressed message is a public note. Use `@handle` to request a response, or `@all` to address every enabled department. The composer previews recipients; the server validates them again. Messages sent while paused remain public and are not replayed when you resume.
 
-Leads receive the attributed request, the originating human request and the latest 50 public messages, with an omission notice when older history exists. Each department keeps a distinct Pi conversation even when departments share a workspace.
+Leads receive the attributed request and originating human request in full, plus bounded updates from public room history. Background context uses at most the latest 50 new messages, excerpted within a 12,000-byte limit; a persisted per-conversation cursor avoids repeating earlier snapshots. Each department keeps a distinct Pi conversation even when departments share a workspace.
 
 The `send_room_message` tool posts public text and optional explicit recipient handles. Its acknowledgement confirms storage, not recipient completion. The host supplies the sender identity and accepts calls only from an active delivery's credential. Retrying the same tool call cannot duplicate a message or delivery. Final assistant text is public; mentions inside a final response do not trigger work. Private reasoning, raw tool results and complete native transcripts are not broadcast.
 
@@ -78,7 +78,9 @@ Each human request permits **eight deliveries total**, including the initial rec
 
 Use **Pause & stop** before manual continuation. Studio blocks dispatch, cancels queued work and revokes active credentials before requesting native cancellation. It clears Pi's queue, requests abort, waits for idle/exit, and escalates to process-group termination if needed. A stopping department stays unavailable until exit or idle is confirmed. Existing edits are preserved; stopping is not rollback or proof that every external side effect has stopped.
 
-After a service restart, unfinished runs are marked interrupted, queued work is canceled, and the room starts paused. Nothing is automatically replayed. If a previous execution outcome is uncertain, inspect its processes, workspace and native session before resuming. **Resume room** enables new requests only.
+After a service restart, unfinished runs and context preparation are marked interrupted, queued work is canceled, and the room starts paused. Nothing is automatically replayed. If a previous execution outcome is uncertain, inspect its processes, workspace and native session before resuming.
+
+**Resume room** checks every enabled department's conversation before enabling new requests. Healthy context is retained; large history is compacted with the selected model. Context that is too large or cannot be compacted is replaced with a fresh conversation and bounded handoff, preserving old transcripts and workspace files. Wait for **Room running** before sending work; **Cancel resume** stops preparation. See [context maintenance](docs/resume-context.md) for the policy, migration and live-demo restart instructions.
 
 For self-development, first save a Git baseline and select separate workspaces/worktrees for concurrent editors. Test and review proposed changes before restarting the application. The bridge extension is snapshotted at service startup, so editing its source does not change the next running-server delivery. Changes to authentication, tool permissions or cancellation controls require an explicit human request and human review. Self-development agents are not started automatically.
 

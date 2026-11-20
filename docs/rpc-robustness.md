@@ -1,5 +1,14 @@
 # Pi command timeout investigation and robustness candidate
 
+Follow-up: the [November 20 runtime audit](2026-11-20-runtime-audit.md) inspected the
+retained live-demo sessions and identified context exhaustion and pre-prompt compaction
+as the next issue. It records the subsequent tested fix and recovery steps. The initial
+investigation below did not inspect those sessions.
+
+The subsequent [Resume context maintenance](resume-context.md) adds recovery before
+unpausing and bounded incremental room context. The timeout patch below is historical;
+it did not by itself repair an already oversized conversation.
+
 Human request: investigate the frontend department's `Pi command timed out` and
 improve backend robustness (2026-11-20). This is separate from the deferred watchdog.
 
