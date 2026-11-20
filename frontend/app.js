@@ -23,6 +23,11 @@ let composingMessage = false;
 let mentionState = { context: null, options: [], active: 0 };
 let mentionDismissedKey = null;
 let deleting = false;
+let deliveryBaseline = false;
+let activities = [];
+let activityTimer = null;
+const observedDeliveries = new Map();
+const pageTitle = document.title;
 const rosterNodes = new Map();
 const messageNodes = new Map();
 const dialog = $("#lead-dialog");
@@ -335,6 +340,84 @@ function renderMessages() {
   firstSnapshot = false;
 }
 
+function deliveryAttribution(delivery) {
+  const message = state.messages.find((item) => item.id === delivery.message_id);
+  const index = message?.recipient_ids?.indexOf(delivery.lead_id) ?? -1;
+  return message?.recipient_handles?.[index] || state.leads.find((lead) => lead.id === delivery.lead_id)?.handle || "department";
+}
+
+function deliveryKey(delivery) {
+  return `${delivery.id}:${delivery.generation ?? 0}`;
+}
+
+function activityDetails(delivery) {
+  const handle = deliveryAttribution(delivery);
+  if (delivery.state === "completed") return { tone: "success", text: `@${handle} finished this run` };
+  if (delivery.state === "stopping") return { tone: "stopping", text: `@${handle} is stopping this run` };
+  return { tone: "failure", text: `@${handle} ${delivery.state} this run` };
+}
+
+function renderRunActivities() {
+  const unread = activities.filter((item) => !item.read).length;
+  text($("#activity-count"), unread);
+  $("#activity-count").hidden = unread === 0;
+  text($("#activity-summary"), unread ? `${unread} unread update${unread === 1 ? "" : "s"}` : "No unread updates");
+  $("#activity-mark-read").disabled = unread === 0;
+  document.title = document.hidden && unread ? `(${unread}) ${pageTitle}` : pageTitle;
+  const rows = document.createDocumentFragment();
+  for (const activity of activities) {
+    const row = element("li", `activity-item ${activity.tone}`);
+    row.append(element("p", "", activity.text));
+    const view = element("button", "", "View");
+    view.type = "button";
+    view.addEventListener("click", () => {
+      const target = messageNodes.get(activity.messageId);
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      activity.read = true;
+      renderRunActivities();
+    });
+    const dismiss = element("button", "", "Dismiss");
+    dismiss.type = "button";
+    dismiss.addEventListener("click", () => {
+      activities = activities.filter((item) => item.key !== activity.key);
+      renderRunActivities();
+    });
+    row.append(view, dismiss);
+    rows.append(row);
+  }
+  $("#activity-list").replaceChildren(rows);
+}
+
+function showActivityToast(activity) {
+  const toast = $("#activity-toast");
+  text(toast, activity.text);
+  toast.className = `activity-toast ${activity.tone}`;
+  toast.hidden = false;
+  clearTimeout(activityTimer);
+  activityTimer = setTimeout(() => { toast.hidden = true; }, 7000);
+}
+
+function observeDeliveries() {
+  if (!deliveryBaseline) {
+    state.deliveries.forEach((delivery) => observedDeliveries.set(deliveryKey(delivery), delivery.state));
+    deliveryBaseline = true;
+    return;
+  }
+  const updates = [];
+  for (const delivery of state.deliveries) {
+    const key = deliveryKey(delivery);
+    const previous = observedDeliveries.get(key);
+    observedDeliveries.set(key, delivery.state);
+    if (["completed", "failed", "interrupted", "canceled", "stopping"].includes(delivery.state) && previous !== delivery.state) {
+      updates.push({ key, messageId: delivery.message_id, read: false, ...activityDetails(delivery) });
+    }
+  }
+  if (!updates.length) return;
+  activities = [...updates.slice(-3), ...activities].slice(0, 50);
+  renderRunActivities();
+  showActivityToast(updates.at(-1));
+}
+
 function renderActivity() {
   const activeIds = [...new Set(state.deliveries
     .filter((delivery) => delivery.state === "running")
@@ -388,6 +471,7 @@ async function refresh() {
       $("#access-notice").hidden = true;
       renderRoster();
       renderMessages();
+      observeDeliveries();
       renderControls();
       renderActivity();
       previewRecipients();
@@ -826,6 +910,17 @@ $("#lead-form").addEventListener("submit", async (event) => {
   } catch (error) { notice("#form-error", error.message); }
   finally { saving = false; updatePermission(); }
 });
+
+$("#activity-toggle").addEventListener("click", () => {
+  const panel = $("#activity-panel");
+  panel.hidden = !panel.hidden;
+  $("#activity-toggle").setAttribute("aria-expanded", String(!panel.hidden));
+});
+$("#activity-mark-read").addEventListener("click", () => {
+  activities.forEach((activity) => { activity.read = true; });
+  renderRunActivities();
+});
+document.addEventListener("visibilitychange", renderRunActivities);
 
 if (!authenticated) requireLaunch();
 else refresh();

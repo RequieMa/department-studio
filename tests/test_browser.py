@@ -81,6 +81,14 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
     expect(page.locator("#recipient-preview")).to_contain_text("@atlas")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("Synthetic test reply from 星图 Studio.", exact=True)).to_be_visible()
+    expect(page.locator("#activity-toast")).to_have_text("@atlas finished this run")
+    expect(page.locator("#activity-count")).to_have_text("1")
+    page.get_by_role("button", name="Activity 1", exact=True).click()
+    expect(
+        page.get_by_role("region", name="Run activity")
+    ).to_contain_text("@atlas finished this run")
+    page.get_by_role("button", name="Mark all read", exact=True).click()
+    expect(page.locator("#activity-count")).to_be_hidden()
 
     page.get_by_role("button", name="Edit 星图 Studio", exact=True).click()
     dialog = page.get_by_role("dialog", name="Edit department")
