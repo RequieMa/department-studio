@@ -193,6 +193,18 @@ def create_app(
             )
         )
 
+    @app.delete("/api/leads/{lead_id}")
+    async def delete_lead(
+        lead_id: str,
+        request: Request,
+        revision: str = Query(min_length=1, max_length=19, pattern=r"^[0-9]+$"),
+    ):
+        # Query strings have no native integer type. Reject fractions and ambiguity
+        # instead of relying on Pydantic's permissive string-to-integer coercion.
+        if len(request.query_params.getlist("revision")) != 1:
+            raise Invalid("Provide exactly one revision.")
+        return asdict(app.state.store.delete_lead(lead_id, int(revision)))
+
     @app.post("/api/messages")
     async def post_human(body: MessageBody):
         return asdict(app.state.service.post_human(body.text))

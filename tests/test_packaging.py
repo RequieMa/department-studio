@@ -1,8 +1,11 @@
 import asyncio
+import hashlib
+import json
 import os
 import signal
 import socket
 import subprocess
+import sys
 import zipfile
 from importlib.resources import files
 from pathlib import Path
@@ -41,8 +44,79 @@ def built_wheel(tmp_path_factory):
     return next(directory.glob("*.whl"))
 
 
-def wheel_command(wheel):
-    return ["uv", "run", "--isolated", "--no-project", "--with", str(wheel), "department-studio"]
+def artifact_environment():
+    # Tests may intentionally import a review worktree through PYTHONPATH. Never
+    # let that (or a developer interpreter) shadow the installed artifact in children.
+    excluded = {"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"}
+    return {key: value for key, value in os.environ.items() if key not in excluded} | {
+        "PYTHONNOUSERSITE": "1",
+        "UV_OFFLINE": "1",
+    }
+
+
+def wheel_command(wheel, executable="department-studio"):
+    # Reuse the uv-managed interpreter version, not its site-packages. Otherwise
+    # uv may choose a different locally installed Python with no cached wheels.
+    return [
+        "uv",
+        "run",
+        "--isolated",
+        "--no-project",
+        "--python",
+        sys.executable,
+        "--with",
+        str(wheel),
+        executable,
+    ]
+
+
+def test_installed_artifact_imports_and_assets_ignore_source_pythonpath(
+    built_wheel, tmp_path, monkeypatch
+):
+    shadow = tmp_path / "shadow" / "department_studio"
+    shadow.mkdir(parents=True)
+    (shadow / "__init__.py").write_text("raise RuntimeError('source checkout was imported')")
+    monkeypatch.setenv("PYTHONPATH", str(shadow.parent))
+    result = subprocess.run(
+        [
+            *wheel_command(built_wheel, "python"),
+            "-c",
+            """
+import hashlib, json, sys
+from importlib.metadata import distribution
+from pathlib import Path
+from department_studio import api, domain, store
+package = Path(api.__file__).resolve().parent
+installed = distribution('department-studio')
+assert package == Path(installed.locate_file('department_studio')).resolve()
+assert json.loads(installed.read_text('direct_url.json'))['url'] == Path(sys.argv[1]).as_uri()
+paths = [Path(module.__file__).resolve() for module in (api, domain, store)]
+paths += [package / 'static' / name for name in ('index.html', 'app.js', 'style.css')]
+assert all(path.is_relative_to(package) for path in paths)
+assert 'site-packages' in package.parts
+print(json.dumps({str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in paths}))
+""",
+            str(built_wheel),
+        ],
+        cwd=tmp_path,
+        env=artifact_environment(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    with zipfile.ZipFile(built_wheel) as archive:
+        assert json.loads(result.stdout) == {
+            name: hashlib.sha256(archive.read(f"department_studio/{name}")).hexdigest()
+            for name in (
+                "api.py",
+                "domain.py",
+                "store.py",
+                "static/index.html",
+                "static/app.js",
+                "static/style.css",
+            )
+        }
 
 
 def test_built_wheel_contains_ui_bridge_and_a_working_cli(built_wheel, tmp_path):
@@ -56,6 +130,7 @@ def test_built_wheel_contains_ui_bridge_and_a_working_cli(built_wheel, tmp_path)
     help_result = subprocess.run(
         [*wheel_command(built_wheel), "--help"],
         cwd=tmp_path,
+        env=artifact_environment(),
         capture_output=True,
         text=True,
         check=True,
@@ -76,6 +151,7 @@ async def test_wheel_cli_serves_authenticated_room_outside_repository(built_whee
         "--data-dir",
         str(tmp_path / "data"),
         cwd=tmp_path,
+        env=artifact_environment(),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
@@ -99,6 +175,15 @@ async def test_wheel_cli_serves_authenticated_room_outside_repository(built_whee
                 assert page.status_code == 200 and "Department Studio" in page.text
                 assert (await client.get("/app.js")).status_code == 200
                 assert (await client.get("/style.css")).status_code == 200
+                with zipfile.ZipFile(built_wheel) as archive:
+                    for url, name in (
+                        ("/", "index.html"),
+                        ("/app.js", "app.js"),
+                        ("/style.css", "style.css"),
+                    ):
+                        assert (await client.get(url)).content == archive.read(
+                            f"department_studio/static/{name}"
+                        )
                 assert owner not in page.text
     finally:
         if process.returncode is None:
@@ -126,6 +211,7 @@ def test_cli_rejects_unavailable_port_without_emitting_launch_token(built_wheel,
                 str(tmp_path / "data"),
             ],
             cwd=tmp_path,
+            env=artifact_environment(),
             capture_output=True,
             text=True,
         )

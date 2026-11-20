@@ -18,6 +18,7 @@ from department_studio.domain import (
     Invalid,
     Lead,
     LeadCreate,
+    LeadDeletion,
     NotFound,
     Receipt,
     RoomMessage,
@@ -28,6 +29,7 @@ from department_studio.domain import (
 _ACTIVE = "('running', 'stopping')"
 _BUSY = "('queued', 'running', 'stopping')"
 _MENTIONS = re.compile(r"(?<![\w@])@([\w-]+)")
+# Immutable v0 baseline. Schema upgrades below must also work on existing databases.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS room (id INTEGER PRIMARY KEY CHECK(id=1), paused INTEGER NOT NULL);
 INSERT OR IGNORE INTO room VALUES (1, 1);
@@ -87,10 +89,31 @@ class Store:
         self._lock = threading.RLock()
         self._db = sqlite3.connect(path, check_same_thread=False, isolation_level=None, timeout=5)
         self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA foreign_keys=ON")
-        self._db.execute("PRAGMA journal_mode=WAL")
-        self._db.execute("PRAGMA busy_timeout=5000")
-        self._db.executescript(_SCHEMA)
+        try:
+            # Reject unknown versions before even changing the persistent journal mode.
+            self._schema_version()
+            self._db.execute("PRAGMA foreign_keys=ON")
+            self._db.execute("PRAGMA busy_timeout=5000")
+            with self._transaction():
+                # Another opener may have migrated while we waited for the writer lock.
+                if self._schema_version() == 0:
+                    # These baseline statements contain no embedded semicolons. Do not use
+                    # executescript here: it implicitly commits an existing transaction.
+                    for statement in _SCHEMA.split(";"):
+                        if statement.strip():
+                            self._db.execute(statement)
+                    self._db.execute("ALTER TABLE leads ADD COLUMN deleted_at TEXT")
+                    self._db.execute("PRAGMA user_version=1")
+            self._db.execute("PRAGMA journal_mode=WAL")
+        except BaseException:
+            self._db.close()
+            raise
+
+    def _schema_version(self) -> int:
+        version = self._db.execute("PRAGMA user_version").fetchone()[0]
+        if version not in {0, 1}:
+            raise RuntimeError("Unsupported database schema version; use a compatible release.")
+        return version
 
     def __enter__(self):
         return self
@@ -133,10 +156,11 @@ class Store:
             raise Conflict("That handle is already in use.") from exc
         return self.get_lead(lead_id)
 
-    def get_lead(self, lead_id: str) -> Lead:
+    def get_lead(self, lead_id: str, *, include_deleted: bool = False) -> Lead:
+        """Active configuration by default; explicit historical reads never enable writes."""
         with self._lock:
             row = self._db.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
-            if row is None:
+            if row is None or (row["deleted_at"] is not None and not include_deleted):
                 raise NotFound("Department not found.")
             active = self._db.execute(
                 f"SELECT state FROM deliveries WHERE lead_id=? AND state IN {_BUSY} "
@@ -150,14 +174,46 @@ class Store:
                 id=row["id"],
                 conversation_id=row["conversation_id"],
                 revision=row["revision"],
-                status=active[0] if active else ("idle" if settings["enabled"] else "disabled"),
+                status="deleted"
+                if row["deleted_at"] is not None
+                else (active[0] if active else ("idle" if settings["enabled"] else "disabled")),
+                deleted_at=row["deleted_at"],
             )
 
     def list_leads(self) -> list[Lead]:
         with self._lock:
-            return [
-                self.get_lead(r[0]) for r in self._db.execute("SELECT id FROM leads ORDER BY rowid")
-            ]
+            rows = self._db.execute(
+                "SELECT id FROM leads WHERE deleted_at IS NULL ORDER BY rowid"
+            ).fetchall()
+            # Another connection can tombstone an ID after the roster query. Finish
+            # that cursor first, then read retained records and omit any tombstones.
+            leads = [self.get_lead(row[0], include_deleted=True) for row in rows]
+            return [lead for lead in leads if lead.deleted_at is None]
+
+    def delete_lead(self, lead_id: str, revision: int) -> LeadDeletion:
+        """Tombstone only: no cancellation, file removal, or historical row deletion."""
+        if type(revision) is not int or revision < 1:
+            raise Invalid("Revision must be a positive integer.")
+        with self._transaction():
+            lead = self.get_lead(lead_id, include_deleted=True)
+            if lead.deleted_at is not None:
+                # The precondition applies only to the active -> deleted transition.
+                return LeadDeletion(lead.id, lead.revision, lead.deleted_at)
+            if lead.revision != revision:
+                raise Conflict("Configuration revision changed; reload before deleting.")
+            # Future worker/continuation support must extend this busy predicate before
+            # activation. Deletion never stops work or makes uncertain work look idle.
+            if self._db.execute(
+                f"SELECT 1 FROM deliveries WHERE lead_id=? AND state IN {_BUSY} LIMIT 1",
+                (lead_id,),
+            ).fetchone():
+                raise Conflict("Department is busy; wait for all deliveries to finish.")
+            deleted_at = _now()
+            self._db.execute(
+                "UPDATE leads SET deleted_at=?,revision=revision+1 WHERE id=?",
+                (deleted_at, lead_id),
+            )
+            return LeadDeletion(lead_id, lead.revision + 1, deleted_at)
 
     def update_lead(self, lead_id: str, revision: int, changes: dict) -> Lead:
         try:
@@ -246,12 +302,14 @@ class Store:
         return message_id
 
     def _enqueue(self, chain_id: str, message_id: str, recipients: list[str]) -> Receipt:
+        # All callers hold the same write transaction used for deletion and claiming.
+        leads = [self.get_lead(lead_id) for lead_id in recipients]
         notice = None
         if recipients:
             chain = self.get_chain(chain_id)
             if self.paused:
                 notice = "Room is paused. Resume and send a new request to start work."
-            elif any(self.get_lead(i).status == "stopping" for i in recipients):
+            elif any(lead.status == "stopping" for lead in leads):
                 notice = "A recipient is still stopping. Wait for confirmed idle and send again."
             elif chain.reserved + len(recipients) > chain.allowance:
                 notice = (
@@ -263,7 +321,7 @@ class Store:
         self._db.execute(
             "UPDATE chains SET reserved=reserved+? WHERE id=?", (len(recipients), chain_id)
         )
-        for lead_id in recipients:
+        for lead in leads:
             self._db.execute(
                 "INSERT INTO "
                 "deliveries(id,chain_id,message_id,lead_id,conversation_id,state,created_at)"
@@ -272,8 +330,8 @@ class Store:
                     str(uuid4()),
                     chain_id,
                     message_id,
-                    lead_id,
-                    self.get_lead(lead_id).conversation_id,
+                    lead.id,
+                    lead.conversation_id,
                     _now(),
                 ),
             )
@@ -299,7 +357,8 @@ class Store:
             not self.paused
             and self._db.execute(
                 "SELECT 1 FROM deliveries d JOIN leads l ON l.id=d.lead_id "
-                "WHERE d.id=? AND d.generation=? AND l.generation=? AND d.state='running'",
+                "WHERE d.id=? AND d.generation=? AND l.generation=? AND d.state='running' "
+                "AND l.deleted_at IS NULL",
                 (delivery_id, generation, generation),
             ).fetchone()
             is not None
@@ -408,7 +467,8 @@ class Store:
             if self.paused or count >= max_concurrency:
                 return None
             row = self._db.execute(
-                "SELECT d.* FROM deliveries d WHERE d.state='queued' AND NOT EXISTS "
+                "SELECT d.* FROM deliveries d JOIN leads l ON l.id=d.lead_id "
+                "WHERE d.state='queued' AND l.deleted_at IS NULL AND NOT EXISTS "
                 f"(SELECT 1 FROM deliveries busy WHERE busy.lead_id=d.lead_id AND "
                 f"busy.state IN {_ACTIVE}) "
                 "ORDER BY d.rowid LIMIT 1"

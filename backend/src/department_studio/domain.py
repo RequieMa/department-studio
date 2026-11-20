@@ -82,11 +82,19 @@ class Lead(LeadCreate):
     conversation_id: str
     revision: int
     status: str = "idle"
+    deleted_at: str | None = None
 
     def __post_init__(self):
         # Persisted settings remain readable if a workspace later disappears.
         # Creation and updates are validated using LeadCreate.
         pass
+
+
+@dataclass(frozen=True)
+class LeadDeletion:
+    id: str
+    revision: int
+    deleted_at: str
 
 
 @dataclass(frozen=True)
