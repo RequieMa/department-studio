@@ -1,5 +1,15 @@
 # Live Pi collaboration demo
 
+For the existing November 20 room and frontend failures, use the
+[runtime audit and recovery instructions](2026-11-20-runtime-audit.md). That room uses
+the root `live-demo/` directory. The bootstrap data path below belongs to the earlier,
+separate demonstration and is retained as historical preparation guidance.
+
+The root application now performs [context maintenance on Resume](resume-context.md).
+Restart the root server to load it, click **Resume room**, wait for **Room running**,
+then send a new request. Resume may use the selected models to compact existing
+history; unrecoverable context is replaced while old conversations and files remain.
+
 This guide prepares a real, user-directed conversation about Department Studio.
 It does not run inference or create departments automatically. Choose the two
 department names, handles, roles, models and workspaces in the UI. Keep both in
