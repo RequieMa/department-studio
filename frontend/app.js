@@ -1,3 +1,5 @@
+import { createTaskUI } from "./tasks.js";
+
 const $ = (selector) => document.querySelector(selector);
 const storageKey = "department-studio-owner";
 const fragment = new URLSearchParams(location.hash.slice(1));
@@ -24,13 +26,6 @@ let enterHandledUntilKeyup = false;
 let mentionState = { context: null, options: [], active: 0 };
 let mentionDismissedKey = null;
 let deleting = false;
-let deliveryBaseline = false;
-let activities = [];
-let activityTimer = null;
-let activityOverflow = { count: 0, nonSuccess: 0 };
-const observedDeliveries = new Map();
-const activityNodes = new Map();
-const pageTitle = document.title;
 const rosterNodes = new Map();
 const messageNodes = new Map();
 const dialog = $("#lead-dialog");
@@ -77,7 +72,10 @@ async function request(path, { method = "GET", body, signal } = {}) {
   const data = await response.json();
   if (!response.ok) {
     const fields = data.errors?.map((item) => item.field.replace(/^body\./, "")).join(", ");
-    throw new Error((data.detail || "The request could not be completed.") + (fields ? ` Check: ${fields}.` : ""));
+    const error = new Error((data.detail || "The request could not be completed.") + (fields ? ` Check: ${fields}.` : ""));
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
   }
   return data;
 }
@@ -350,124 +348,6 @@ function renderMessages() {
   firstSnapshot = false;
 }
 
-function deliveryAttribution(delivery) {
-  const message = state.messages.find((item) => item.id === delivery.message_id);
-  const index = message?.recipient_ids?.indexOf(delivery.lead_id) ?? -1;
-  return message?.recipient_handles?.[index] || state.leads.find((lead) => lead.id === delivery.lead_id)?.handle || "department";
-}
-
-function deliveryKey(delivery) {
-  return `${delivery.id}:${delivery.generation ?? 0}`;
-}
-
-function activityDetails(delivery) {
-  const handle = deliveryAttribution(delivery);
-  if (delivery.state === "completed") return { tone: "success", text: `@${handle} finished this run` };
-  if (delivery.state === "stopping") return { tone: "stopping", text: `@${handle} is stopping this run` };
-  return { tone: "failure", text: `@${handle} ${delivery.state} this run` };
-}
-
-function isNonSuccess(activity) {
-  return activity.tone !== "success";
-}
-
-function renderRunActivities() {
-  const unread = activities.filter((item) => !item.read).length;
-  text($("#activity-count"), unread);
-  $("#activity-count").hidden = unread === 0;
-  text($("#activity-summary"), unread ? `${unread} unread update${unread === 1 ? "" : "s"}` : "No unread updates");
-  $("#activity-mark-read").disabled = unread === 0;
-  document.title = document.hidden && unread ? `(${unread}) ${pageTitle}` : pageTitle;
-  const overflow = $("#activity-overflow");
-  const overflowText = activityOverflow.count
-    ? `${activityOverflow.count} older update${activityOverflow.count === 1 ? "" : "s"} hidden by this page's activity limit${activityOverflow.nonSuccess ? ` (${activityOverflow.nonSuccess} non-success)` : ""}. See the original delivery history in the room.`
-    : "";
-  text(overflow, overflowText);
-  overflow.hidden = !overflowText;
-
-  const retained = new Set(activities.map((activity) => activity.key));
-  for (const [key, nodes] of activityNodes) {
-    if (!retained.has(key)) {
-      nodes.row.remove();
-      activityNodes.delete(key);
-    }
-  }
-  const list = $("#activity-list");
-  let position = list.firstElementChild;
-  for (const activity of activities) {
-    let nodes = activityNodes.get(activity.key);
-    if (!nodes) {
-      const row = element("li");
-      row.dataset.activity = activity.key;
-      const label = element("p");
-      const view = element("button", "", "View");
-      view.type = "button";
-      view.addEventListener("click", () => {
-        const current = activities.find((item) => item.key === activity.key);
-        const target = messageNodes.get(current?.messageId);
-        target?.scrollIntoView({ block: "center", behavior: "smooth" });
-        if (current) current.read = true;
-        renderRunActivities();
-      });
-      const dismiss = element("button", "", "Dismiss");
-      dismiss.type = "button";
-      dismiss.addEventListener("click", () => {
-        const index = activities.findIndex((item) => item.key === activity.key);
-        const next = activities[index + 1] || activities[index - 1];
-        activities = activities.filter((item) => item.key !== activity.key);
-        renderRunActivities();
-        (next ? activityNodes.get(next.key)?.dismiss : $("#activity-toggle")).focus();
-      });
-      row.append(label, view, dismiss);
-      nodes = { row, label, dismiss };
-      activityNodes.set(activity.key, nodes);
-    }
-    nodes.row.className = `activity-item ${activity.tone}`;
-    text(nodes.label, activity.text);
-    // Insert new rows in place; moving retained rows would blur focused buttons.
-    if (nodes.row !== position) list.insertBefore(nodes.row, position);
-    position = nodes.row.nextElementSibling;
-  }
-}
-
-function showActivityToast(activity) {
-  const toast = $("#activity-toast");
-  text(toast, activity.text);
-  toast.className = `activity-toast ${activity.tone}`;
-  toast.hidden = false;
-  clearTimeout(activityTimer);
-  activityTimer = setTimeout(() => { toast.hidden = true; }, 7000);
-}
-
-function observeDeliveries() {
-  if (!deliveryBaseline) {
-    state.deliveries.forEach((delivery) => observedDeliveries.set(deliveryKey(delivery), delivery.state));
-    deliveryBaseline = true;
-    return;
-  }
-  const updates = [];
-  for (const delivery of state.deliveries) {
-    const key = deliveryKey(delivery);
-    const previous = observedDeliveries.get(key);
-    observedDeliveries.set(key, delivery.state);
-    if (["completed", "failed", "interrupted", "canceled", "stopping"].includes(delivery.state) && previous !== delivery.state) {
-      updates.push({ key, messageId: delivery.message_id, read: false, ...activityDetails(delivery) });
-    }
-  }
-  if (!updates.length) return;
-  for (const update of updates) {
-    const existing = activities.find((activity) => activity.key === update.key);
-    if (existing) Object.assign(existing, update);
-    else activities.unshift(update);
-  }
-  const dropped = activities.splice(50);
-  activityOverflow.count += dropped.length;
-  activityOverflow.nonSuccess += dropped.filter(isNonSuccess).length;
-  renderRunActivities();
-  // Coalesce the toast only; retain updates up to the explicitly reported limit.
-  showActivityToast(updates.at(-1));
-}
-
 function renderActivity() {
   const activeIds = [...new Set(state.deliveries
     .filter((delivery) => delivery.state === "running")
@@ -521,11 +401,12 @@ async function refresh() {
       $("#access-notice").hidden = true;
       renderRoster();
       renderMessages();
-      observeDeliveries();
       renderControls();
       renderActivity();
       previewRecipients();
+      tasksUI.refresh(state, authenticated);
     } catch {
+      tasksUI.refresh(state, false);
       if (authenticated) text($("#connection"), "Reconnecting…");
     } finally { polling = null; }
   })();
@@ -980,11 +861,17 @@ $("#activity-toggle").addEventListener("click", () => {
   panel.hidden = !panel.hidden;
   $("#activity-toggle").setAttribute("aria-expanded", String(!panel.hidden));
 });
-$("#activity-mark-read").addEventListener("click", () => {
-  activities.forEach((activity) => { activity.read = true; });
-  renderRunActivities();
+const tasksUI = createTaskUI({
+  request,
+  refreshRoom: refresh,
+  viewMessage(id) {
+    const article = messageNodes.get(id);
+    if (!article) return;
+    article.setAttribute("tabindex", "-1");
+    article.focus({ preventScroll: true });
+    article.scrollIntoView({ block: "center" });
+  },
 });
-document.addEventListener("visibilitychange", renderRunActivities);
 
 if (!authenticated) requireLaunch();
 else refresh();
