@@ -375,6 +375,98 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
     context.close()
 
 
+def test_recipient_context_wraps_and_running_activity_is_not_typing(browser):
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    leads = [
+        {
+            "id": str(number), "name": f"Team {number}", "handle": f"department{number}",
+            "provider": "test", "model_id": "fixture", "workspace": "/workspace",
+            "enabled": True, "permission": "discuss", "status": "running",
+        }
+        for number in range(8)
+    ]
+    current = {
+        "paused": False, "leads": leads, "messages": [],
+        "deliveries": [{"id": "run", "lead_id": "0", "state": "running"}],
+    }
+    page.route("**/api/state", lambda route: route.fulfill(json=current))
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    composer.fill("@all ")
+    expect(page.locator("#room-recipient")).to_contain_text("@department7")
+    assert page.locator("#recipient-context").evaluate("""node => {
+      const badge = node.getBoundingClientRect();
+      const room = document.querySelector('.room').getBoundingClientRect();
+      return badge.left >= room.left && badge.right <= room.right
+        && node.scrollWidth <= node.clientWidth;
+    }""")
+    expect(page.locator("#typing-text")).to_have_text("Team 0 is working…")
+    current["deliveries"].append({"id": "second", "lead_id": "1", "state": "running"})
+    expect(page.locator("#typing-text")).to_have_text("Team 0 and Team 1 are working…")
+    current["deliveries"][0]["state"] = "stopping"
+    current["deliveries"][1]["state"] = "failed"
+    expect(page.locator("#typing-indicator")).to_be_hidden()
+    context.close()
+
+
+def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    message = {
+        "id": "request", "sender_id": None, "sender_name": "You", "sender_kind": "human",
+        "sender_handle": "you", "timestamp": "2026-11-20T04:00:00+00:00", "text": "work",
+        "recipient_ids": ["atlas"], "recipient_handles": ["historic-atlas"],
+        "chain_id": "chain", "notice": None,
+    }
+    def delivery(delivery_id, status):
+        return {
+            "id": delivery_id, "generation": 1, "message_id": "request",
+            "lead_id": "atlas", "state": status,
+        }
+
+    current = {
+        "paused": False, "leads": [], "messages": [message],
+        "deliveries": [delivery("old", "completed")],
+    }
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(current)
+        ),
+    )
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    expect(page.get_by_text("Connected locally", exact=True)).to_be_visible()
+    expect(page.locator("#activity-count")).to_be_hidden()  # Initial history is a silent baseline.
+
+    current["deliveries"] = [
+        delivery("failed-first", "failed"),
+        *[delivery(f"success-{number}", "completed") for number in range(55)],
+    ]
+    expect(page.locator("#activity-count")).to_have_text("50", timeout=5000)
+    page.get_by_role("button", name="Activity 50", exact=True).click()
+    expect(page.locator("#activity-list li")).to_have_count(50)
+    expect(page.locator("#activity-overflow")).to_contain_text("1 non-success")
+    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas finished this run")
+
+    focused_key = page.locator("#activity-list li").first.get_attribute("data-activity")
+    focused = page.locator(f'#activity-list [data-activity="{focused_key}"] button').first
+    focused.focus()
+    current["deliveries"].append(delivery("new", "completed"))
+    page.wait_for_timeout(1200)
+    expect(focused).to_be_focused()
+
+    # A single stable row is updated for stopping -> interrupted, and repeated
+    # snapshots do not create another row.
+    current["deliveries"] = [delivery("life", "stopping")]
+    page.wait_for_timeout(1200)
+    current["deliveries"][0]["state"] = "interrupted"
+    page.wait_for_timeout(1200)
+    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas interrupted this run")
+    expect(page.locator("#activity-list li")).to_have_count(50)
+    context.close()
+
+
 def test_delete_department_confirmation_uses_revision_and_blocks_busy_departments(browser):
     context = browser.new_context()
     page = context.new_page()

@@ -26,7 +26,9 @@ let deleting = false;
 let deliveryBaseline = false;
 let activities = [];
 let activityTimer = null;
+let activityOverflow = { count: 0, nonSuccess: 0 };
 const observedDeliveries = new Map();
+const activityNodes = new Map();
 const pageTitle = document.title;
 const rosterNodes = new Map();
 const messageNodes = new Map();
@@ -357,6 +359,10 @@ function activityDetails(delivery) {
   return { tone: "failure", text: `@${handle} ${delivery.state} this run` };
 }
 
+function isNonSuccess(activity) {
+  return activity.tone !== "success";
+}
+
 function renderRunActivities() {
   const unread = activities.filter((item) => !item.read).length;
   text($("#activity-count"), unread);
@@ -364,28 +370,56 @@ function renderRunActivities() {
   text($("#activity-summary"), unread ? `${unread} unread update${unread === 1 ? "" : "s"}` : "No unread updates");
   $("#activity-mark-read").disabled = unread === 0;
   document.title = document.hidden && unread ? `(${unread}) ${pageTitle}` : pageTitle;
-  const rows = document.createDocumentFragment();
-  for (const activity of activities) {
-    const row = element("li", `activity-item ${activity.tone}`);
-    row.append(element("p", "", activity.text));
-    const view = element("button", "", "View");
-    view.type = "button";
-    view.addEventListener("click", () => {
-      const target = messageNodes.get(activity.messageId);
-      target?.scrollIntoView({ block: "center", behavior: "smooth" });
-      activity.read = true;
-      renderRunActivities();
-    });
-    const dismiss = element("button", "", "Dismiss");
-    dismiss.type = "button";
-    dismiss.addEventListener("click", () => {
-      activities = activities.filter((item) => item.key !== activity.key);
-      renderRunActivities();
-    });
-    row.append(view, dismiss);
-    rows.append(row);
+  const overflow = $("#activity-overflow");
+  const overflowText = activityOverflow.count
+    ? `${activityOverflow.count} older update${activityOverflow.count === 1 ? "" : "s"} hidden by this page's activity limit${activityOverflow.nonSuccess ? ` (${activityOverflow.nonSuccess} non-success)` : ""}. See the original delivery history in the room.`
+    : "";
+  text(overflow, overflowText);
+  overflow.hidden = !overflowText;
+
+  const retained = new Set(activities.map((activity) => activity.key));
+  for (const [key, nodes] of activityNodes) {
+    if (!retained.has(key)) {
+      nodes.row.remove();
+      activityNodes.delete(key);
+    }
   }
-  $("#activity-list").replaceChildren(rows);
+  const list = $("#activity-list");
+  let position = list.firstElementChild;
+  for (const activity of activities) {
+    let nodes = activityNodes.get(activity.key);
+    if (!nodes) {
+      const row = element("li");
+      row.dataset.activity = activity.key;
+      const label = element("p");
+      const view = element("button", "", "View");
+      view.type = "button";
+      view.addEventListener("click", () => {
+        const current = activities.find((item) => item.key === activity.key);
+        const target = messageNodes.get(current?.messageId);
+        target?.scrollIntoView({ block: "center", behavior: "smooth" });
+        if (current) current.read = true;
+        renderRunActivities();
+      });
+      const dismiss = element("button", "", "Dismiss");
+      dismiss.type = "button";
+      dismiss.addEventListener("click", () => {
+        const index = activities.findIndex((item) => item.key === activity.key);
+        const next = activities[index + 1] || activities[index - 1];
+        activities = activities.filter((item) => item.key !== activity.key);
+        renderRunActivities();
+        (next ? activityNodes.get(next.key)?.dismiss : $("#activity-toggle")).focus();
+      });
+      row.append(label, view, dismiss);
+      nodes = { row, label, dismiss };
+      activityNodes.set(activity.key, nodes);
+    }
+    nodes.row.className = `activity-item ${activity.tone}`;
+    text(nodes.label, activity.text);
+    // Insert new rows in place; moving retained rows would blur focused buttons.
+    if (nodes.row !== position) list.insertBefore(nodes.row, position);
+    position = nodes.row.nextElementSibling;
+  }
 }
 
 function showActivityToast(activity) {
@@ -413,8 +447,16 @@ function observeDeliveries() {
     }
   }
   if (!updates.length) return;
-  activities = [...updates.slice(-3), ...activities].slice(0, 50);
+  for (const update of updates) {
+    const existing = activities.find((activity) => activity.key === update.key);
+    if (existing) Object.assign(existing, update);
+    else activities.unshift(update);
+  }
+  const dropped = activities.splice(50);
+  activityOverflow.count += dropped.length;
+  activityOverflow.nonSuccess += dropped.filter(isNonSuccess).length;
   renderRunActivities();
+  // Coalesce the toast only; retain updates up to the explicitly reported limit.
   showActivityToast(updates.at(-1));
 }
 
@@ -433,7 +475,7 @@ function renderActivity() {
     return;
   }
   const people = names.length === 1 ? names[0] : names.length === 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
-  text($("#typing-text"), `${people} ${names.length === 1 ? "is" : "are"} typing a reply…`);
+  text($("#typing-text"), `${people} ${names.length === 1 ? "is" : "are"} working…`);
   indicator.hidden = false;
 }
 
