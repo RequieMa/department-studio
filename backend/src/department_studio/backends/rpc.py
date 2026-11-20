@@ -19,7 +19,17 @@ class RpcTimeout(RpcError):
     def __init__(self, command: str, phase: str):
         safe_command = (
             command
-            if command in {"get_state", "get_available_models", "prompt", "clear_queue", "abort"}
+            if command
+            in {
+                "get_state",
+                "get_available_models",
+                "get_session_stats",
+                "get_messages",
+                "compact",
+                "prompt",
+                "clear_queue",
+                "abort",
+            }
             else "command"
         )
         detail = f"Pi command timed out while {phase} ({safe_command})."
@@ -147,17 +157,40 @@ class RpcProcess:
         except (OSError, RuntimeError) as exc:
             raise RpcError("Pi input could not be written.") from exc
 
-    async def command(self, command: str, *, timeout: float | None = None, **arguments):  # noqa: ASYNC109 -- per-command RPC deadline
+    async def command(
+        self,
+        command: str,
+        *,
+        timeout: float | None = None,  # noqa: ASYNC109 -- per-command RPC deadline
+        response_activity: asyncio.Event | None = None,
+        activity_timeout: float | None = None,
+        **arguments,
+    ):
         request_id = uuid4().hex
-        future = asyncio.get_running_loop().create_future()
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        future = loop.create_future()
         self._pending[request_id] = (command, future)
+        activity_waiter = None
         try:
             phase = "writing input"
             try:
                 # Include lock acquisition and stdin backpressure, not just the response.
-                async with asyncio.timeout(self.command_timeout if timeout is None else timeout):
+                budget = self.command_timeout if timeout is None else timeout
+                async with asyncio.timeout(budget) as deadline:
                     await self.send({"id": request_id, "type": command, **arguments})
                     phase = "waiting for response"
+                    if response_activity is not None and activity_timeout is not None:
+                        activity_waiter = asyncio.create_task(response_activity.wait())
+                        done, _ = await asyncio.wait(
+                            {future, activity_waiter}, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        if future not in done:
+                            # Pi can compact before acknowledging a prompt. A real compaction
+                            # event admits the remaining run budget once; it never extends
+                            # input writes or turns arbitrary output into a keepalive.
+                            phase = "compacting conversation history before response"
+                            deadline.reschedule(started + max(budget, activity_timeout))
                     response = await future
             except TimeoutError as exc:
                 raise RpcTimeout(command, phase) from exc
@@ -167,6 +200,8 @@ class RpcProcess:
                 )
             return response.get("data")
         finally:
+            if activity_waiter is not None:
+                activity_waiter.cancel()
             self._pending.pop(request_id, None)
             if not future.done():
                 future.cancel()
@@ -174,6 +209,8 @@ class RpcProcess:
                 # A reader failure may race an interrupted stdin drain. Retrieve it even
                 # when the caller never reached its response await.
                 future.exception()
+            if activity_waiter is not None:
+                await asyncio.gather(activity_waiter, return_exceptions=True)
 
     async def next_event(self) -> dict:
         if self._events.empty() and self._failure:

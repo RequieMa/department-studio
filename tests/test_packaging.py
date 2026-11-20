@@ -167,6 +167,8 @@ async def test_wheel_cli_serves_authenticated_room_outside_repository(built_whee
                 state = await client.get("/api/state", headers={"Authorization": "Bearer " + owner})
                 assert state.json() == {
                     "paused": True,
+                    "preparing": False,
+                    "context_checks": [],
                     "leads": [],
                     "messages": [],
                     "deliveries": [],

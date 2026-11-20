@@ -98,6 +98,15 @@ class LeadDeletion:
 
 
 @dataclass(frozen=True)
+class ContextCheck:
+    id: str
+    lead_id: str
+    conversation_id: str
+    state: str
+    detail: str
+
+
+@dataclass(frozen=True)
 class RoomMessage:
     id: str
     sequence: int

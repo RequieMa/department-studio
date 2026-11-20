@@ -8,7 +8,7 @@ try {
   else token = sessionStorage.getItem(storageKey);
 } catch { /* This tab can still use the fragment credential until it closes. */ }
 
-let state = { paused: true, leads: [], messages: [], deliveries: [] };
+let state = { paused: true, preparing: false, context_checks: [], leads: [], messages: [], deliveries: [] };
 let authenticated = Boolean(token);
 let polling = null;
 let sending = false;
@@ -107,7 +107,7 @@ function renderRoster() {
       const edit = element("button", "edit-lead", "⋯");
       edit.type = "button";
       edit.addEventListener("click", () => openDepartment(state.leads.find((item) => item.id === lead.id)));
-      card.append(bottom, edit);
+      card.append(bottom, element("p", "context-note"), edit);
       rosterNodes.set(lead.id, card);
       $("#roster").append(card);
     }
@@ -118,13 +118,19 @@ function renderRoster() {
     text(card.querySelector(".workspace"), lead.workspace);
     card.querySelector(".workspace").title = lead.workspace;
     const status = card.querySelector(".lead-status");
-    text(status, { idle: "Ready", running: "Working", queued: "Queued", stopping: "Stopping", disabled: "Disabled" }[lead.status] || lead.status);
-    status.classList.toggle("active", lead.status === "running");
+    text(status, { idle: "Ready", running: "Working", queued: "Queued", preparing: "Preparing", stopping: "Stopping", disabled: "Disabled" }[lead.status] || lead.status);
+    status.classList.toggle("active", ["running", "preparing"].includes(lead.status));
     status.classList.toggle("warning", lead.status === "stopping");
     const permission = card.querySelector(".permission-badge");
     text(permission, lead.permission === "develop" ? "Develop" : "Discuss");
     permission.classList.toggle("develop", lead.permission === "develop");
+    const check = (state.context_checks || []).find((item) => item.lead_id === lead.id);
+    const contextNote = card.querySelector(".context-note");
+    contextNote.hidden = !check || check.state === "kept";
+    text(contextNote, check?.detail || "");
+    contextNote.classList.toggle("warning", ["failed", "stopping", "interrupted"].includes(check?.state));
     card.querySelector("button").setAttribute("aria-label", `Edit ${lead.name}`);
+    card.querySelector("button").disabled = Boolean(state.preparing);
   }
 }
 
@@ -488,9 +494,11 @@ function renderActivity() {
 }
 
 function renderControls() {
-  const stopping = state.deliveries.some((delivery) => delivery.state === "stopping");
-  const uncertain = state.deliveries.some((delivery) => delivery.error === "Service restarted; previous execution outcome is uncertain.");
-  text($("#room-state"), stopping ? "Stopping" : state.paused ? "Room paused" : "Room running");
+  const checks = state.context_checks || [];
+  const stopping = state.deliveries.some((delivery) => delivery.state === "stopping") || checks.some((check) => check.state === "stopping");
+  const uncertain = state.deliveries.some((delivery) => delivery.error === "Service restarted; previous execution outcome is uncertain.") || checks.some((check) => check.state === "interrupted" && check.detail.startsWith("Service restarted"));
+  const contextFailed = checks.some((check) => ["failed", "interrupted"].includes(check.state));
+  text($("#room-state"), stopping ? "Stopping" : state.preparing ? "Preparing room" : state.paused ? "Room paused" : "Room running");
   $("#room-state").classList.toggle("running", !state.paused && !stopping);
   $("#room-state").classList.toggle("stopping", stopping);
   let status = "Ready for addressed requests";
@@ -498,17 +506,25 @@ function renderControls() {
   if (stopping) {
     status = "Stopping — wait before manual takeover";
     description = "Waiting for confirmed idle or process exit. Existing edits are preserved.";
+  } else if (state.preparing) {
+    const ready = checks.filter((check) => ["kept", "compacted", "reset"].includes(check.state)).length;
+    status = `Preparing department context · ${ready}/${checks.length} ready`;
+    description = "Checking conversations and compacting history where needed. New work can start when the room is ready.";
+  } else if (state.paused && contextFailed && !uncertain) {
+    status = "Paused · context preparation incomplete";
+    description = "Review the department context notes, then Resume again. Previous conversations and workspace files are retained.";
   } else if (state.paused) {
     status = uncertain ? "Paused · inspect interrupted work" : "Paused · runtimes idle";
-    description = uncertain ? "A previous run ended without confirmation. Inspect its processes and edits before resuming." : "Resume, then send a new request. Stopped work stays stopped.";
+    description = uncertain ? "A previous run ended without confirmation. Inspect its processes and edits before resuming." : "Resume checks context and may use your selected models to compact history. Then send a new request. Stopped work stays stopped.";
   }
   text($("#control-status"), status);
   text($("#control-description"), description);
-  $("#resume").hidden = !state.paused;
-  $("#pause").hidden = state.paused;
-  $("#resume").disabled = !authenticated || stopping;
+  $("#resume").hidden = !state.paused || Boolean(state.preparing);
+  $("#pause").hidden = state.paused && !state.preparing;
+  text($("#pause"), state.preparing ? "Cancel resume" : "Pause & stop");
+  $("#resume").disabled = !authenticated || stopping || Boolean(state.preparing);
   $("#pause").disabled = !authenticated;
-  $("#add-department").disabled = !authenticated;
+  $("#add-department").disabled = !authenticated || Boolean(state.preparing);
 }
 
 async function refresh() {
@@ -779,7 +795,7 @@ function updatePermission() {
 }
 
 function departmentBusy(lead) {
-  return ["queued", "running", "stopping"].includes(lead?.status);
+  return Boolean(state.preparing) || ["queued", "running", "stopping", "preparing"].includes(lead?.status);
 }
 
 function updateDeleteAction() {

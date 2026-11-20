@@ -71,6 +71,7 @@ async def test_delete_revision_busy_and_unchanged_credential_boundary(http_app, 
     ).status_code == 403
     assert (await client.delete(f"/api/leads/{target['id']}?revision=999")).status_code == 409
     await client.post("/api/room/resume")
+    await until(lambda: not app.state.store.paused)
     await client.post("/api/messages", json={"text": "@atlas work"})
     await until(lambda: backend.requests)
     run = backend.requests[0]

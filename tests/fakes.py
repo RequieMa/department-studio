@@ -2,7 +2,13 @@
 
 import asyncio
 
-from department_studio.backends.base import AgentEvent, BackendCapabilities, ModelOption, RunOutcome
+from department_studio.backends.base import (
+    AgentEvent,
+    BackendCapabilities,
+    ContextOutcome,
+    ModelOption,
+    RunOutcome,
+)
 
 
 class ControlledBackend:
@@ -23,6 +29,9 @@ class ControlledBackend:
             ModelOption("test", "model-a", "Synthetic A"),
             ModelOption("test", "model-b", "Synthetic B"),
         ]
+
+    async def prepare_context(self, request, emit):
+        return ContextOutcome("kept")
 
     async def run(self, request, emit):
         self.requests.append(request)

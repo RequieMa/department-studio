@@ -6,7 +6,7 @@ import httpx
 import pytest
 from playwright.sync_api import expect
 
-from tests.test_browser import ORIGIN, TOKEN
+from tests.test_browser import ORIGIN, TOKEN, wait_for_condition
 from tests.test_browser import browser as browser
 
 pytestmark = pytest.mark.browser
@@ -132,6 +132,7 @@ def test_real_endpoint_deletion_preserves_history_and_handles_stale_and_busy(bro
             busy.raise_for_status()
             busy_lead = busy.json()
             client.post("/api/room/resume").raise_for_status()
+            wait_for_condition(page, lambda: not client.get("/api/state").json()["paused"])
             client.post(
                 "/api/messages", json={"text": "@deletion_busy synthetic wait"}
             ).raise_for_status()

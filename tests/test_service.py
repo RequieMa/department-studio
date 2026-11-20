@@ -45,7 +45,7 @@ async def test_global_concurrency_and_per_lead_serialization(running, store, tmp
     assert backend.max_active == 2
 
 
-async def test_attributed_prompt_includes_origin_and_latest_fifty_messages(
+async def test_attributed_prompt_preserves_origin_with_bounded_recent_context(
     running, store, tmp_path
 ):
     service, backend = running
@@ -59,8 +59,8 @@ async def test_attributed_prompt_includes_origin_and_latest_fifty_messages(
     data = json.loads(prompt.split("\n", 1)[1])
     assert data["input"]["sender_kind"] == "human"
     assert data["human_request"]["text"] == "@atlas /model attacker-controlled"
-    assert len(data["recent_messages"]) == 50
-    assert data["history_notice"].startswith("6 older")
+    assert 0 < len(data["recent_messages"]) < 50
+    assert "background messages omitted" in data["history_notice"]
     assert data["recent_messages"][0]["sender_name"] == "星图 Studio"
 
 
@@ -115,9 +115,12 @@ async def test_pause_revokes_before_signaling_and_late_replies_are_diagnostic(
         service.post_bridge(run.bridge_token, "late", "must reject", [])
     await until(lambda: backend.cancel_calls)
     assert store.get_delivery(run.id).state == "stopping"
-    service.resume()
+    with pytest.raises(Conflict):
+        service.resume()
     backend.release(run, text="Late public content must not appear")
     await until(lambda: store.get_delivery(run.id).state == "interrupted")
+    service.resume()
+    await until(lambda: not store.paused)
     assert len(store.list_messages()) == 2
     assert store.get_delivery(run.id).diagnostic
     assert len(backend.requests) == 1
@@ -208,3 +211,45 @@ async def test_unsupported_dialog_has_a_specific_safe_diagnostic(running, store,
     service.post_human("@atlas work")
     await until(lambda: store.list_deliveries()[0].state == "completed")
     assert store.list_deliveries()[0].diagnostic == "Unsupported runtime dialog canceled."
+
+
+@pytest.mark.parametrize(
+    ("kind", "detail", "public"),
+    [
+        (
+            "progress",
+            "Runtime is compacting conversation history.",
+            "Runtime is compacting conversation history.",
+        ),
+        (
+            "error",
+            "Conversation compaction failed; inspect retained work before retrying.",
+            "Conversation compaction failed; inspect retained work before retrying.",
+        ),
+        (
+            "error",
+            "Conversation compaction was interrupted.",
+            "Conversation compaction was interrupted.",
+        ),
+        (
+            "error",
+            "Conversation compaction failed: Authorization: Bearer private-token",
+            "Runtime reported an error.",
+        ),
+    ],
+)
+async def test_only_fixed_compaction_diagnostics_reach_the_room(
+    running, store, tmp_path, kind, detail, public
+):
+    service, backend = running
+    create_lead(store, tmp_path)
+
+    async def reporting(request, emit):
+        await emit(AgentEvent(kind, detail))
+        return RunOutcome("completed")
+
+    backend.run = reporting
+    service.post_human("@atlas work")
+    await until(lambda: store.list_deliveries()[0].state == "completed")
+    assert store.list_deliveries()[0].diagnostic == public
+    assert "private-token" not in json.dumps(store.snapshot())

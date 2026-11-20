@@ -63,15 +63,25 @@ def table_snapshot(path):
         }
 
 
-def test_v0_migration_retains_every_existing_field_and_is_repeatable(tmp_path):
+@pytest.mark.parametrize("version", [0, 1])
+def test_migration_retains_every_existing_field_and_is_repeatable(tmp_path, version):
     path = legacy_database(tmp_path / "legacy.sqlite", tmp_path)
+    if version == 1:
+        with sqlite3.connect(path) as db:
+            db.execute("ALTER TABLE leads ADD COLUMN deleted_at TEXT")
+            db.execute("PRAGMA user_version=1")
     before = table_snapshot(path)
     with Store(path) as store:
         assert store.get_lead("lead").revision == 3
         assert store.get_lead("lead").deleted_at is None
         assert store.list_session_refs("lead")[0]["native_session_ref"] == "native-reference"
+        assert store.session_context("conversation") == {
+            "history_cursor": 0,
+            "previous_conversation_id": None,
+            "native_session_ref": None,
+        }
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         for table, (columns, rows) in before.items():
             assert (
@@ -84,18 +94,18 @@ def test_v0_migration_retains_every_existing_field_and_is_repeatable(tmp_path):
     assert table_snapshot(path) == migrated
 
 
-def test_new_database_has_version_one_and_nullable_tombstone(tmp_path):
+def test_new_database_has_version_two_and_nullable_tombstone(tmp_path):
     path = tmp_path / "new.sqlite"
     with Store(path):
         pass
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         columns = {r[1]: r for r in db.execute("PRAGMA table_info(leads)")}
         assert columns["deleted_at"][2:4] == ("TEXT", 0)
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-@pytest.mark.parametrize("version", [2, 999, -1])
+@pytest.mark.parametrize("version", [3, 999, -1])
 def test_unknown_version_rejected_before_schema_or_journal_writes(tmp_path, version):
     path = tmp_path / "future.sqlite"
     with sqlite3.connect(path) as db:
@@ -114,17 +124,22 @@ def test_unknown_version_rejected_before_schema_or_journal_writes(tmp_path, vers
         ]
 
 
+@pytest.mark.parametrize("version", [0, 1])
 def test_migration_failure_rolls_back_schema_and_version_and_closes_connection(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, version
 ):
     path = legacy_database(tmp_path / "legacy.sqlite", tmp_path)
+    if version == 1:
+        with sqlite3.connect(path) as db:
+            db.execute("ALTER TABLE leads ADD COLUMN deleted_at TEXT")
+            db.execute("PRAGMA user_version=1")
     before = table_snapshot(path)
     connect = sqlite3.connect
     connections = []
 
     class FaultyConnection(sqlite3.Connection):
         def execute(self, sql, *args, **kwargs):
-            if sql.strip().upper() == "PRAGMA USER_VERSION=1":
+            if sql.strip().upper() == "PRAGMA USER_VERSION=2":
                 raise sqlite3.OperationalError("synthetic version write failure")
             return super().execute(sql, *args, **kwargs)
 
@@ -139,7 +154,7 @@ def test_migration_failure_rolls_back_schema_and_version_and_closes_connection(
             Store(path)
     assert table_snapshot(path) == before
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 0
+        assert db.execute("PRAGMA user_version").fetchone()[0] == version
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         connections[0].execute("SELECT 1")

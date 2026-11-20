@@ -14,6 +14,7 @@ MODE = os.environ.get("FAKE_PI_MODE", "normal")
 TRACE = os.environ.get("FAKE_PI_TRACE")
 LOCK = threading.Lock()
 PENDING_PROMPT = None
+COMPACTED = False
 
 
 def option(name, default=""):
@@ -77,6 +78,16 @@ def final(text="Synthetic public reply", reason="stop", *, aborted=False):
     trace({"checkpoint": "agent_end"})
     if MODE == "delayed":
         time.sleep(0.2)
+    if MODE == "compaction_after_success":
+        emit({"type": "compaction_start", "reason": "threshold"})
+        emit(
+            {
+                "type": "compaction_end",
+                "aborted": False,
+                "willRetry": False,
+                "errorMessage": "Authorization: Bearer secret-compaction-error",
+            }
+        )
     emit({"type": "agent_settled", "aborted": aborted})
 
 
@@ -160,14 +171,59 @@ for line in sys.stdin:
                 "model": {
                     "provider": option("--provider", "test"),
                     "id": "wrong-model" if MODE == "wrong_model" else option("--model", "model-a"),
+                    "contextWindow": 100000,
                 },
-                "sessionId": option("--session-id"),
+                "sessionId": "wrong-session"
+                if MODE == "context_wrong_session"
+                else option("--session-id"),
                 "sessionFile": str(Path(option("--session-dir", "/tmp")) / "fixture.jsonl"),
-                "isStreaming": False,
+                "isStreaming": MODE == "context_busy",
                 "isCompacting": False,
                 "pendingMessageCount": 0,
+                "messageCount": 0 if MODE == "context_empty" else 12,
             },
         )
+    elif kind == "get_session_stats":
+        tokens = 10000
+        if MODE == "context_overflow":
+            tokens = 210000
+        elif MODE.startswith("context_") and MODE not in {"context_null_usage", "context_empty"}:
+            tokens = 75000
+        if COMPACTED or MODE == "context_null_usage":
+            tokens = None
+        reply(
+            command,
+            {
+                "tokens": {"total": 9000000},  # Lifetime totals must not drive compaction.
+                "contextUsage": {"tokens": tokens, "contextWindow": 100000},
+            },
+        )
+    elif kind == "get_messages":
+        reply(command, {"messages": [{"role": "user", "content": "A compact handoff"}]})
+    elif kind == "compact":
+        emit({"type": "compaction_start", "reason": "manual"})
+        if MODE == "context_hang":
+            continue
+        if MODE == "context_failed":
+            emit(
+                {
+                    "type": "compaction_end",
+                    "errorMessage": "secret-provider-error",
+                    "aborted": False,
+                }
+            )
+            reply(command, success=False)
+            continue
+        COMPACTED = True
+        result = {
+            "summary": "Private context summary",
+            "firstKeptEntryId": "retained-entry",
+            "estimatedTokensAfter": 75000 if MODE == "context_ineffective" else 15000,
+        }
+        if MODE == "context_bad_result":
+            result = {}
+        emit({"type": "compaction_end", "result": result, "aborted": False})
+        reply(command, result)
     elif kind == "get_available_models":
         reply(
             command,
@@ -186,6 +242,26 @@ for line in sys.stdin:
     elif kind == "prompt":
         if MODE == "silent_prompt":
             continue
+        if MODE in {"compaction_before_ack", "compaction_without_ack", "compaction_failed"}:
+            emit({"type": "compaction_start", "reason": "threshold"})
+            trace({"checkpoint": "compaction_start"})
+            if MODE == "compaction_without_ack":
+                continue
+            if MODE == "compaction_before_ack":
+                time.sleep(0.5)
+            emit(
+                {
+                    "type": "compaction_end",
+                    "result": {"summary": "private compaction summary"}
+                    if MODE == "compaction_before_ack"
+                    else None,
+                    "aborted": False,
+                    "willRetry": False,
+                    "errorMessage": "Authorization: Bearer secret-compaction-error"
+                    if MODE == "compaction_failed"
+                    else None,
+                }
+            )
         if MODE in {"finished_before_ack", "finished_without_ack"}:
             final()
             if MODE == "finished_before_ack":
@@ -227,7 +303,35 @@ for line in sys.stdin:
             continue
         if MODE == "bridge" and option("--model") == "model-a":
             bridge()
-        final(reason="error" if MODE == "provider_error" else "stop")
+        if MODE == "length_recovered":
+            emit(
+                {
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "stopReason": "length",
+                        "content": [{"type": "text", "text": "incomplete private attempt"}],
+                    },
+                }
+            )
+            emit({"type": "agent_end", "messages": [], "willRetry": True})
+            emit({"type": "compaction_start", "reason": "overflow"})
+            emit(
+                {
+                    "type": "compaction_end",
+                    "result": {"summary": "private compaction summary"},
+                    "aborted": False,
+                    "willRetry": True,
+                }
+            )
+        reason = (
+            "error"
+            if MODE == "provider_error"
+            else "length"
+            if MODE in {"length", "compaction_failed"}
+            else "stop"
+        )
+        final(reason=reason)
     elif kind == "extension_ui_response":
         if PENDING_PROMPT is not None:
             reply(PENDING_PROMPT, {"disposition": "started"})

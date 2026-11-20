@@ -14,6 +14,7 @@ from uuid import uuid4
 from department_studio.domain import (
     Chain,
     Conflict,
+    ContextCheck,
     Delivery,
     Invalid,
     Lead,
@@ -28,6 +29,7 @@ from department_studio.domain import (
 
 _ACTIVE = "('running', 'stopping')"
 _BUSY = "('queued', 'running', 'stopping')"
+_CONTEXT_BUSY = "('queued', 'checking', 'compacting', 'stopping')"
 _MENTIONS = re.compile(r"(?<![\w@])@([\w-]+)")
 # Immutable v0 baseline. Schema upgrades below must also work on existing databases.
 _SCHEMA = """
@@ -104,6 +106,24 @@ class Store:
                             self._db.execute(statement)
                     self._db.execute("ALTER TABLE leads ADD COLUMN deleted_at TEXT")
                     self._db.execute("PRAGMA user_version=1")
+                if self._schema_version() == 1:
+                    self._db.execute("ALTER TABLE room ADD COLUMN preparation_id TEXT")
+                    self._db.execute(
+                        "ALTER TABLE sessions ADD COLUMN history_cursor INTEGER NOT NULL DEFAULT 0"
+                    )
+                    self._db.execute(
+                        "ALTER TABLE sessions ADD COLUMN previous_conversation_id TEXT "
+                        "REFERENCES sessions(conversation_id)"
+                    )
+                    self._db.execute(
+                        "CREATE TABLE context_checks ("
+                        "id TEXT UNIQUE NOT NULL, lead_id TEXT PRIMARY KEY REFERENCES leads(id), "
+                        "conversation_id TEXT NOT NULL REFERENCES sessions(conversation_id), "
+                        "state TEXT NOT NULL CHECK(state IN "
+                        "('queued','checking','compacting','stopping','kept','compacted',"
+                        "'reset','failed','interrupted')), detail TEXT NOT NULL)"
+                    )
+                    self._db.execute("PRAGMA user_version=2")
             self._db.execute("PRAGMA journal_mode=WAL")
         except BaseException:
             self._db.close()
@@ -111,7 +131,7 @@ class Store:
 
     def _schema_version(self) -> int:
         version = self._db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1}:
+        if version not in {0, 1, 2}:
             raise RuntimeError("Unsupported database schema version; use a compatible release.")
         return version
 
@@ -140,17 +160,31 @@ class Store:
         with self._lock:
             return bool(self._db.execute("SELECT paused FROM room WHERE id=1").fetchone()[0])
 
+    @property
+    def preparing(self) -> bool:
+        with self._lock:
+            return (
+                self._db.execute("SELECT preparation_id FROM room WHERE id=1").fetchone()[0]
+                is not None
+            )
+
+    def _configuration_available(self):
+        if self.preparing:
+            raise Conflict("Room context preparation is in progress; wait or cancel Resume.")
+
     def create_lead(self, data: LeadCreate) -> Lead:
         lead_id, conversation_id = str(uuid4()), str(uuid4())
         try:
             with self._transaction():
+                self._configuration_available()
                 self._db.execute(
                     "INSERT INTO leads(id,handle,settings,conversation_id,revision) "
                     "VALUES(?,?,?,?,1)",
                     (lead_id, data.handle, json.dumps(asdict(data)), conversation_id),
                 )
                 self._db.execute(
-                    "INSERT INTO sessions VALUES(?,?,NULL,?)", (conversation_id, lead_id, _now())
+                    "INSERT INTO sessions(conversation_id,lead_id,created_at) VALUES(?,?,?)",
+                    (conversation_id, lead_id, _now()),
                 )
         except sqlite3.IntegrityError as exc:
             raise Conflict("That handle is already in use.") from exc
@@ -168,6 +202,13 @@ class Store:
                 "END LIMIT 1",
                 (lead_id,),
             ).fetchone()
+            context = self._db.execute(
+                f"SELECT state FROM context_checks WHERE lead_id=? AND state IN {_CONTEXT_BUSY}",
+                (lead_id,),
+            ).fetchone()
+            status = active[0] if active else None
+            if status is None and context:
+                status = "stopping" if context[0] == "stopping" else "preparing"
             settings = json.loads(row["settings"])
             return Lead(
                 **settings,
@@ -176,7 +217,7 @@ class Store:
                 revision=row["revision"],
                 status="deleted"
                 if row["deleted_at"] is not None
-                else (active[0] if active else ("idle" if settings["enabled"] else "disabled")),
+                else (status or ("idle" if settings["enabled"] else "disabled")),
                 deleted_at=row["deleted_at"],
             )
 
@@ -199,6 +240,7 @@ class Store:
             if lead.deleted_at is not None:
                 # The precondition applies only to the active -> deleted transition.
                 return LeadDeletion(lead.id, lead.revision, lead.deleted_at)
+            self._configuration_available()
             if lead.revision != revision:
                 raise Conflict("Configuration revision changed; reload before deleting.")
             # Future worker/continuation support must extend this busy predicate before
@@ -206,7 +248,7 @@ class Store:
             if self._db.execute(
                 f"SELECT 1 FROM deliveries WHERE lead_id=? AND state IN {_BUSY} LIMIT 1",
                 (lead_id,),
-            ).fetchone():
+            ).fetchone() or lead.status in {"preparing", "stopping"}:
                 raise Conflict("Department is busy; wait for all deliveries to finish.")
             deleted_at = _now()
             self._db.execute(
@@ -218,10 +260,11 @@ class Store:
     def update_lead(self, lead_id: str, revision: int, changes: dict) -> Lead:
         try:
             with self._transaction():
+                self._configuration_available()
                 lead = self.get_lead(lead_id)
                 if lead.revision != revision:
                     raise Conflict("Configuration revision changed; reload before saving.")
-                if lead.status in {"queued", "running", "stopping"}:
+                if lead.status in {"queued", "running", "stopping", "preparing"}:
                     raise Conflict("Department is busy; wait for all deliveries to finish.")
                 settings = {key: getattr(lead, key) for key in LeadCreate.__dataclass_fields__}
                 try:
@@ -232,7 +275,7 @@ class Store:
                 if data.workspace != lead.workspace:
                     conversation_id = str(uuid4())
                     self._db.execute(
-                        "INSERT INTO sessions VALUES(?,?,NULL,?)",
+                        "INSERT INTO sessions(conversation_id,lead_id,created_at) VALUES(?,?,?)",
                         (conversation_id, lead_id, _now()),
                     )
                 self._db.execute(
@@ -252,6 +295,152 @@ class Store:
                     "SELECT * FROM sessions WHERE lead_id=? ORDER BY rowid", (lead_id,)
                 )
             ]
+
+    def session_context(self, conversation_id: str) -> dict:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT s.history_cursor,s.previous_conversation_id,p.native_session_ref "
+                "FROM sessions s LEFT JOIN sessions p "
+                "ON p.conversation_id=s.previous_conversation_id WHERE s.conversation_id=?",
+                (conversation_id,),
+            ).fetchone()
+            if row is None:
+                raise NotFound("Conversation not found.")
+            return dict(row)
+
+    def list_context_checks(self) -> list[ContextCheck]:
+        with self._lock:
+            return [
+                ContextCheck(**dict(row))
+                for row in self._db.execute("SELECT * FROM context_checks ORDER BY rowid")
+            ]
+
+    def begin_context_preparation(self) -> tuple[str, list[ContextCheck]] | None:
+        """Reserve a paused roster before spawning any maintenance processes."""
+        with self._transaction():
+            if not self.paused:
+                return None
+            if (
+                self._db.execute(
+                    f"SELECT 1 FROM deliveries WHERE state IN {_ACTIVE} LIMIT 1"
+                ).fetchone()
+                or self._db.execute(
+                    "SELECT 1 FROM context_checks WHERE state='stopping' LIMIT 1"
+                ).fetchone()
+            ):
+                raise Conflict("Wait for department runtimes to stop before resuming.")
+            if self.preparing:
+                return None
+            batch_id = str(uuid4())
+            self._db.execute("UPDATE room SET preparation_id=? WHERE id=1", (batch_id,))
+            self._db.execute("DELETE FROM context_checks")
+            for lead in self.list_leads():
+                if lead.enabled:
+                    self._db.execute(
+                        "INSERT INTO context_checks VALUES(?,?,?,'queued',?)",
+                        (str(uuid4()), lead.id, lead.conversation_id, "Waiting to check context."),
+                    )
+            return batch_id, self.list_context_checks()
+
+    def claim_context_check(self, check_id: str) -> bool:
+        with self._transaction():
+            if not self.preparing:
+                return False
+            return bool(
+                self._db.execute(
+                    "UPDATE context_checks SET state='checking',"
+                    "detail='Checking conversation context.' "
+                    "WHERE id=? AND state='queued'",
+                    (check_id,),
+                ).rowcount
+            )
+
+    def record_context_progress(self, check_id: str):
+        with self._transaction():
+            self._db.execute(
+                "UPDATE context_checks SET state='compacting',"
+                "detail='Compacting conversation history.' "
+                "WHERE id=? AND state IN ('checking','compacting')",
+                (check_id,),
+            )
+
+    def stop_context_check(self, check_id: str, detail: str):
+        with self._transaction():
+            self._db.execute(
+                "UPDATE context_checks SET state='stopping',detail=? "
+                "WHERE id=? AND state IN ('checking','compacting','stopping')",
+                (detail, check_id),
+            )
+
+    def confirm_context_stopped(self, check_id: str):
+        with self._transaction():
+            self._db.execute(
+                "UPDATE context_checks SET state='interrupted',detail=? "
+                "WHERE id=? AND state='stopping'",
+                (
+                    "Context preparation stopped; previous conversation and files retained.",
+                    check_id,
+                ),
+            )
+
+    def finish_context_check(
+        self, check_id: str, action: str, detail: str, native_session_ref: str | None = None
+    ):
+        if action not in {"kept", "compacted", "reset", "failed", "interrupted"}:
+            raise Invalid("Invalid context outcome.")
+        with self._transaction():
+            row = self._db.execute(
+                "SELECT * FROM context_checks WHERE id=?", (check_id,)
+            ).fetchone()
+            if row is None or row["state"] not in {"checking", "compacting", "stopping"}:
+                return
+            if native_session_ref:
+                self._db.execute(
+                    "UPDATE sessions SET native_session_ref=? WHERE conversation_id=?",
+                    (native_session_ref, row["conversation_id"]),
+                )
+            if row["state"] == "stopping":
+                action = "interrupted"
+                detail = "Context preparation stopped; previous conversation and files retained."
+            if action == "reset":
+                lead = self.get_lead(row["lead_id"])
+                if lead.conversation_id != row["conversation_id"]:
+                    raise Conflict("Conversation changed during context preparation.")
+                conversation_id = str(uuid4())
+                self._db.execute(
+                    "INSERT INTO sessions(conversation_id,lead_id,created_at,"
+                    "previous_conversation_id) "
+                    "VALUES(?,?,?,?)",
+                    (conversation_id, lead.id, _now(), lead.conversation_id),
+                )
+                self._db.execute(
+                    "UPDATE leads SET conversation_id=?,revision=revision+1,"
+                    "generation=generation+1 "
+                    "WHERE id=?",
+                    (conversation_id, lead.id),
+                )
+            self._db.execute(
+                "UPDATE context_checks SET state=?,detail=? WHERE id=?", (action, detail, check_id)
+            )
+
+    def finish_context_preparation(self, batch_id: str) -> bool:
+        with self._transaction():
+            current = self._db.execute("SELECT preparation_id FROM room WHERE id=1").fetchone()[0]
+            if (
+                current != batch_id
+                or self._db.execute(
+                    f"SELECT 1 FROM context_checks WHERE state IN {_CONTEXT_BUSY} LIMIT 1"
+                ).fetchone()
+            ):
+                return False
+            failed = (
+                self._db.execute(
+                    "SELECT 1 FROM context_checks WHERE state IN ('failed','interrupted') LIMIT 1"
+                ).fetchone()
+                is not None
+            )
+            self._db.execute("UPDATE room SET paused=?,preparation_id=NULL WHERE id=1", (failed,))
+            return not failed
 
     def _resolve_handles(self, handles: list[str], *, human: bool) -> list[str]:
         leads = self.list_leads()
@@ -423,11 +612,16 @@ class Store:
                 for r in self._db.execute("SELECT * FROM messages ORDER BY sequence")
             ]
 
-    def recent_messages(self, limit: int = 50) -> tuple[list[RoomMessage], int]:
+    def recent_messages(
+        self, limit: int = 50, *, after_sequence: int = 0
+    ) -> tuple[list[RoomMessage], int]:
         with self._lock:
-            total = self._db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            total = self._db.execute(
+                "SELECT COUNT(*) FROM messages WHERE sequence>?", (after_sequence,)
+            ).fetchone()[0]
             rows = self._db.execute(
-                "SELECT * FROM messages ORDER BY sequence DESC LIMIT ?", (limit,)
+                "SELECT * FROM messages WHERE sequence>? ORDER BY sequence DESC LIMIT ?",
+                (after_sequence, limit),
             )
             return list(reversed([self._message(r) for r in rows])), max(0, total - limit)
 
@@ -496,6 +690,7 @@ class Store:
         text: str = "",
         error: str | None = None,
         native_session_ref: str | None = None,
+        history_cursor: int | None = None,
     ) -> bool:
         if state not in {"completed", "failed", "interrupted"}:
             raise Invalid("Invalid runtime outcome.")
@@ -516,6 +711,12 @@ class Store:
                 self._db.execute(
                     "UPDATE sessions SET native_session_ref=? WHERE conversation_id=?",
                     (native_session_ref, delivery.conversation_id),
+                )
+            if state == "completed" and history_cursor is not None:
+                self._db.execute(
+                    "UPDATE sessions SET history_cursor=MAX(history_cursor,?) "
+                    "WHERE conversation_id=?",
+                    (history_cursor, delivery.conversation_id),
                 )
             if state == "completed" and text.strip():
                 notice = None
@@ -550,7 +751,17 @@ class Store:
 
     def pause(self) -> list[Delivery]:
         with self._transaction():
-            self._db.execute("UPDATE room SET paused=1 WHERE id=1")
+            self._db.execute("UPDATE room SET paused=1,preparation_id=NULL WHERE id=1")
+            self._db.execute(
+                "UPDATE context_checks SET state='interrupted',"
+                "detail='Context check canceled before startup.' "
+                "WHERE state='queued'"
+            )
+            self._db.execute(
+                "UPDATE context_checks SET state='stopping',"
+                "detail='Canceling context preparation; waiting for stop.' "
+                "WHERE state IN ('checking','compacting')"
+            )
             active = [d for d in self.list_deliveries() if d.state in {"running", "stopping"}]
             for lead in self.list_leads():
                 self._invalidate(lead.id, "Paused by the human; awaiting confirmed stop.")
@@ -576,11 +787,26 @@ class Store:
 
     def resume(self):
         with self._transaction():
+            if (
+                self.preparing
+                or self._db.execute(
+                    f"SELECT 1 FROM context_checks WHERE state IN {_CONTEXT_BUSY} LIMIT 1"
+                ).fetchone()
+            ):
+                raise Conflict("Context preparation must finish before resuming.")
             self._db.execute("UPDATE room SET paused=0 WHERE id=1")
 
     def recover(self):
         with self._transaction():
-            self._db.execute("UPDATE room SET paused=1 WHERE id=1")
+            self._db.execute("UPDATE room SET paused=1,preparation_id=NULL WHERE id=1")
+            self._db.execute(
+                "UPDATE context_checks SET state='interrupted',detail=? "
+                f"WHERE state IN {_CONTEXT_BUSY}",
+                (
+                    "Service restarted during context preparation; "
+                    "check retained work before Resume.",
+                ),
+            )
             self._db.execute("UPDATE leads SET generation=generation+1")
             self._db.execute(
                 f"UPDATE deliveries SET state='interrupted',finished_at=?,error=? WHERE "
@@ -602,6 +828,8 @@ class Store:
         with self._lock:
             return {
                 "paused": self.paused,
+                "preparing": self.preparing,
+                "context_checks": [asdict(x) for x in self.list_context_checks()],
                 "leads": [asdict(x) for x in self.list_leads()],
                 "messages": [asdict(x) for x in self.list_messages()],
                 "deliveries": [asdict(x) for x in self.list_deliveries()],

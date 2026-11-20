@@ -46,6 +46,8 @@ async def test_first_run_empty_paused_and_user_configuration_persists(http_app, 
     client, app, _ = http_app
     assert (await client.get("/api/state")).json() == {
         "paused": True,
+        "preparing": False,
+        "context_checks": [],
         "leads": [],
         "messages": [],
         "deliveries": [],
@@ -116,6 +118,7 @@ async def test_runtime_scope_sender_immutability_idempotency_and_generation_revo
     client, app, backend = http_app
     lead = (await client.post("/api/leads", json=lead_body(tmp_path))).json()
     await client.post("/api/room/resume")
+    await until(lambda: not app.state.store.paused)
     await client.post("/api/messages", json={"text": "@atlas work"})
     await until(lambda: backend.requests)
     token = backend.requests[0].bridge_token
@@ -149,7 +152,7 @@ async def test_runtime_scope_sender_immutability_idempotency_and_generation_revo
 
 
 async def test_validation_revision_busy_errors_and_safe_invalid_json(http_app, tmp_path):
-    client, _, backend = http_app
+    client, app, backend = http_app
     assert (
         await client.post("/api/leads", json=lead_body(tmp_path, enabled="yes"))
     ).status_code == 422
@@ -166,6 +169,7 @@ async def test_validation_revision_busy_errors_and_safe_invalid_json(http_app, t
         await client.patch(f"/api/leads/{lead['id']}", json=lead_body(tmp_path, revision=999))
     ).status_code == 409
     await client.post("/api/room/resume")
+    await until(lambda: not app.state.store.paused)
     await client.post("/api/messages", json={"text": "@atlas work"})
     await until(lambda: backend.requests)
     assert (

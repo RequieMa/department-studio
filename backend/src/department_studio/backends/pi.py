@@ -1,6 +1,8 @@
 """Pi RPC adapter, with a separate child and immutable bridge credential per delivery."""
 
 import asyncio
+import json
+import math
 import os
 from collections.abc import Mapping, Sequence
 from contextlib import ExitStack, contextmanager
@@ -9,8 +11,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from department_studio.backends.base import (
+    COMPACTING,
+    COMPACTION_FAILED,
+    COMPACTION_INTERRUPTED,
     AgentEvent,
     BackendCapabilities,
+    ContextOutcome,
+    ContextRequest,
     Emit,
     ModelOption,
     RunOutcome,
@@ -18,6 +25,7 @@ from department_studio.backends.base import (
 )
 from department_studio.backends.rpc import RpcError, RpcProcess
 from department_studio.config import Settings
+from department_studio.domain import Lead
 
 RESOURCE_FLAGS = (
     "--mode",
@@ -33,6 +41,17 @@ RESOURCE_FLAGS = (
 )
 DISCUSS_TOOLS = ("read", "grep", "find", "ls", "send_room_message")
 RUNTIME_FAILURE = "Pi failed. Check the selected provider/model and local runtime setup."
+CONVERSATION_RECOVERY = (
+    " Pause, then Resume room to prepare conversation context before sending a new request. "
+    "Inspect retained work before retrying."
+)
+COMPACTION_INSTRUCTIONS = (
+    "Prepare a concise handoff for a Department Studio department lead. Preserve the current "
+    "human goal, decisions, constraints, exact file paths, completed work, unresolved issues "
+    "and approval limits. Omit repeated room snapshots, duplicate instructions, obsolete "
+    "requests, raw logs and superseded errors. Separate facts from uncertain outcomes. "
+    "Historical tasks are context only; do not resume work or grant new authorization."
+)
 EXTENSION_PATH = Path(__file__).resolve().parents[1] / "pi_extension.ts"
 BRIDGE_READY = "department-studio-bridge-ready-v1"
 
@@ -163,6 +182,163 @@ class PiBackend:
         finally:
             await self._close_client(rpc)
 
+    @staticmethod
+    def _context_state(state: dict, lead: Lead):
+        model = state.get("model") or {}
+        if model.get("provider") != lead.provider or model.get("id") != lead.model_id:
+            raise RpcError("Pi selected a different model during context preparation.")
+        if state.get("sessionId") != lead.conversation_id:
+            raise RpcError("Pi selected a different conversation during context preparation.")
+        if (
+            state.get("isStreaming")
+            or state.get("isCompacting")
+            or state.get("pendingMessageCount")
+        ):
+            raise RpcError("Pi started with unexpected pending activity.")
+        count = state.get("messageCount")
+        if type(count) is not int or count < 0:
+            raise RpcError("Pi returned invalid context metadata.")
+        ref = state.get("sessionFile")
+        if ref is not None and (not isinstance(ref, str) or len(ref) > 4096):
+            raise RpcError("Pi returned invalid context metadata.")
+
+    @staticmethod
+    def _token_count(value) -> float | None:
+        if type(value) in (int, float) and math.isfinite(value) and value >= 0:
+            return value
+        return None
+
+    async def _estimate_context(self, rpc: RpcProcess) -> float:
+        # Pi reports null usage immediately after compaction. Read only its active
+        # message projection, never sum lifetime usage or read the raw session tree.
+        data = await rpc.command("get_messages")
+        messages = data["messages"]
+        if not isinstance(messages, list):
+            raise RpcError("Pi returned invalid context metadata.")
+        # Conservative UTF-8 heuristic; the transport also caps the response at 8 MiB.
+        return math.ceil(len(json.dumps(messages, ensure_ascii=False).encode("utf-8")) / 3)
+
+    async def _context_events(self, rpc: RpcProcess, emit: Emit):
+        try:
+            while True:
+                event = await rpc.next_event()
+                if event["type"] == "extension_ui_request":
+                    await self._handle_ui(rpc, event, emit)
+                # Compaction summaries, usage and provider errors stay private.
+        except RpcError:
+            return
+
+    async def _prepare_idle_context(
+        self, rpc: RpcProcess, state: dict, emit: Emit
+    ) -> ContextOutcome:
+        if state["messageCount"] == 0:
+            return ContextOutcome("kept")
+        stats = await rpc.command("get_session_stats")
+        usage = stats.get("contextUsage") or {}
+        windows = [
+            value
+            for raw in (usage.get("contextWindow"), state["model"].get("contextWindow"))
+            if (value := self._token_count(raw)) is not None and value > 0
+        ]
+        if not windows:
+            return ContextOutcome("failed")
+        window = min(windows)
+        tokens = self._token_count(usage.get("tokens"))
+        if tokens is None or tokens == 0:
+            try:
+                tokens = await self._estimate_context(rpc)
+            except (RpcError, KeyError, TypeError, ValueError):
+                return ContextOutcome("reset", reason="unmeasurable")
+        # Leave ample space for the next attributed request, tool output and reply.
+        target = window * 0.6
+        if tokens <= target:
+            return ContextOutcome("kept")
+        if tokens >= window * 0.9:
+            # A summary call still needs input/output space. Do not submit known
+            # oversized context to the same model and repeat the overflow loop.
+            return ContextOutcome("reset", reason="over_limit")
+        await emit(AgentEvent("progress", COMPACTING))
+        try:
+            result = await rpc.command(
+                "compact",
+                customInstructions=COMPACTION_INSTRUCTIONS,
+                timeout=self.settings.run_timeout_seconds * 0.75,
+            )
+            if (
+                not isinstance(result, dict)
+                or not isinstance(result.get("summary"), str)
+                or not result["summary"].strip()
+            ):
+                return ContextOutcome("reset", reason="compaction_failed")
+            after = self._token_count(result.get("estimatedTokensAfter"))
+            if after is None:
+                after = await self._estimate_context(rpc)
+            if after > target:
+                return ContextOutcome("reset", reason="compaction_failed")
+        except (RpcError, KeyError, TypeError, ValueError):
+            return ContextOutcome("reset", reason="compaction_failed")
+        return ContextOutcome("compacted")
+
+    async def prepare_context(self, request: ContextRequest, emit: Emit) -> ContextOutcome:
+        if request.id in self._runs:
+            raise RpcError("This Pi context check is already running.")
+        rpc, execution, events, native_ref = None, None, None, None
+        outcome = ContextOutcome("failed")
+        try:
+            lead = request.lead
+            session_dir = self.settings.data_dir / "sessions" / lead.id
+            session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            session_dir.chmod(0o700)
+            rpc = self._client(
+                [
+                    "--session-id",
+                    lead.conversation_id,
+                    "--session-dir",
+                    str(session_dir),
+                    "--provider",
+                    lead.provider,
+                    "--model",
+                    lead.model_id,
+                    "--no-tools",
+                ],
+                Path(lead.workspace),
+            )
+            # No bridge extension or per-delivery credentials, even for Develop leads.
+            execution = _Execution(rpc)
+            self._runs[request.id] = execution
+            try:
+                await rpc.start()
+            finally:
+                execution.ready.set()
+            events = asyncio.create_task(self._context_events(rpc, emit))
+            if not execution.canceled:
+                state = await rpc.command("get_state")
+                self._context_state(state, lead)
+                native_ref = state.get("sessionFile")
+                if not execution.canceled:
+                    outcome = await self._prepare_idle_context(rpc, state, emit)
+                    if outcome.action == "compacted":
+                        self._context_state(await rpc.command("get_state"), lead)
+        except asyncio.CancelledError:
+            if execution:
+                execution.canceled = True
+            raise
+        except (RpcError, OSError, ValueError, KeyError, TypeError, AttributeError):
+            outcome = ContextOutcome("failed")
+        finally:
+            if events:
+                events.cancel()
+                await asyncio.gather(events, return_exceptions=True)
+            try:
+                if rpc:
+                    await self._close_client(rpc)
+            finally:
+                if rpc is None or rpc not in self._clients:
+                    self._runs.pop(request.id, None)
+        if execution and execution.canceled:
+            return ContextOutcome("interrupted", native_session_ref=native_ref)
+        return ContextOutcome(outcome.action, native_session_ref=native_ref, reason=outcome.reason)
+
     async def run(self, request: RunRequest, emit: Emit) -> RunOutcome:
         if request.id in self._runs:
             raise RpcError("This Pi delivery is already running.")
@@ -170,6 +346,7 @@ class PiBackend:
         execution = None
         native_ref = None
         snapshots = ExitStack()
+        run_deadline = asyncio.get_running_loop().time() + self.settings.run_timeout_seconds
         try:
             lead = request.lead
             session_dir = self.settings.data_dir / "sessions" / lead.id
@@ -232,9 +409,17 @@ class PiBackend:
                     # Subscribe before sending: input handlers can request a dialog before
                     # acknowledging prompt acceptance, and fast runs can already settle.
                     # Apply the existing unsupported-dialog policy while awaiting the ack.
-                    collecting = asyncio.create_task(self._collect(rpc, request, emit))
+                    compacting = asyncio.Event()
+                    collecting = asyncio.create_task(self._collect(rpc, request, emit, compacting))
                     try:
-                        accepted = await rpc.command("prompt", message=request.prompt)
+                        accepted = await rpc.command(
+                            "prompt",
+                            message=request.prompt,
+                            response_activity=compacting,
+                            activity_timeout=max(
+                                0, run_deadline - asyncio.get_running_loop().time()
+                            ),
+                        )
                         if not isinstance(accepted, dict):
                             raise RpcError("Pi returned an invalid prompt acknowledgement.")
                         if accepted.get("disposition") == "handled":
@@ -285,8 +470,11 @@ class PiBackend:
         except TimeoutError as exc:
             raise RpcError("The room bridge did not initialize; no prompt was sent.") from exc
 
-    async def _collect(self, rpc: RpcProcess, request: RunRequest, emit: Emit) -> RunOutcome:
+    async def _collect(
+        self, rpc: RpcProcess, request: RunRequest, emit: Emit, compacting: asyncio.Event
+    ) -> RunOutcome:
         final = None
+        compaction_failed = False
         while True:
             event = await rpc.next_event()
             kind = event["type"]
@@ -298,11 +486,34 @@ class PiBackend:
                 await self._handle_ui(rpc, event, emit)
             elif kind == "extension_error":
                 await emit(AgentEvent("error", "Pi extension reported an error."))
+            elif kind == "compaction_start":
+                compacting.set()
+                await emit(AgentEvent("progress", COMPACTING))
+            elif kind == "compaction_end":
+                compaction_failed = not event.get("aborted") and not isinstance(
+                    event.get("result"), dict
+                )
+                if event.get("aborted"):
+                    await emit(AgentEvent("error", COMPACTION_INTERRUPTED))
+                elif compaction_failed:
+                    await emit(AgentEvent("error", COMPACTION_FAILED))
+                else:
+                    await emit(AgentEvent("progress", "Runtime is working."))
             elif kind == "agent_settled":
                 if event.get("aborted") or (final and final.get("stopReason") == "aborted"):
                     return RunOutcome("interrupted", error="Pi execution was interrupted.")
+                if final and final.get("stopReason") == "length":
+                    detail = "Pi reached its token limit without a complete reply."
+                    if compaction_failed:
+                        detail += " Conversation compaction failed."
+                    return RunOutcome("failed", error=detail + CONVERSATION_RECOVERY)
                 if final is None or final.get("stopReason") != "stop":
-                    return RunOutcome("failed", error=RUNTIME_FAILURE)
+                    error = (
+                        "Pi conversation compaction failed." + CONVERSATION_RECOVERY
+                        if compaction_failed
+                        else RUNTIME_FAILURE
+                    )
+                    return RunOutcome("failed", error=error)
                 text = "\n".join(
                     block["text"]
                     for block in final.get("content", [])

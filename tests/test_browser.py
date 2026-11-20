@@ -217,6 +217,98 @@ def test_restart_uncertainty_is_not_labeled_confirmed_idle(browser):
     context.close()
 
 
+def test_resume_context_progress_cancel_and_fresh_handoff_are_visible(browser):
+    context = browser.new_context(viewport={"width": 1440, "height": 1000})
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    lead = {
+        "id": "context-lead",
+        "name": "Context department",
+        "handle": "context",
+        "provider": "test",
+        "model_id": "model-a",
+        "workspace": str(ROOT),
+        "permission": "discuss",
+        "enabled": True,
+        "status": "idle",
+        "revision": 1,
+    }
+    view = {
+        "paused": True,
+        "preparing": False,
+        "leads": [lead],
+        "messages": [],
+        "deliveries": [],
+        "context_checks": [],
+    }
+    calls = []
+
+    def respond(route):
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(view))
+
+    def resume(route):
+        calls.append("resume")
+        view["preparing"] = True
+        lead["status"] = "preparing"
+        view["context_checks"] = [
+            {
+                "id": "context-check",
+                "lead_id": lead["id"],
+                "state": "compacting",
+                "detail": "Compacting conversation history.",
+            }
+        ]
+        respond(route)
+
+    def pause(route):
+        calls.append("pause")
+        view["preparing"] = False
+        lead["status"] = "idle"
+        view["context_checks"][0].update(
+            state="interrupted",
+            detail="Context preparation stopped; previous conversation and files retained.",
+        )
+        respond(route)
+
+    page.route("**/api/state", respond)
+    page.route("**/api/room/resume", resume)
+    page.route("**/api/room/pause", pause)
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    composer.fill("@context keep my draft")
+    page.get_by_role("button", name="Resume room", exact=True).click()
+    expect(page.get_by_text("Preparing room", exact=True)).to_be_visible()
+    expect(page.locator("#control-status")).to_have_text("Preparing department context · 0/1 ready")
+    expect(page.locator(".context-note")).to_have_text("Compacting conversation history.")
+    expect(page.get_by_role("button", name="Add department", exact=True)).to_be_disabled()
+    expect(page.get_by_role("button", name="Edit Context department", exact=True)).to_be_disabled()
+    expect(page.locator("#recipient-preview")).to_contain_text("this note will not start work")
+    expect(composer).to_have_value("@context keep my draft")
+    page.get_by_role("button", name="Cancel resume", exact=True).click()
+    expect(page.locator("#control-status")).to_have_text("Paused · context preparation incomplete")
+    assert calls == ["resume", "pause"]
+    page.get_by_role("button", name="Resume room", exact=True).click()
+    expect(page.get_by_text("Preparing room", exact=True)).to_be_visible()
+    view.update(paused=False, preparing=False)
+    lead["status"] = "idle"
+    view["context_checks"][0].update(
+        state="reset",
+        detail="Fresh context ready; previous conversation and workspace files retained.",
+    )
+    expect(page.get_by_text("Room running", exact=True)).to_be_visible()
+    expect(page.locator(".context-note")).to_contain_text("Fresh context ready")
+    expect(composer).to_have_value("@context keep my draft")
+    expect(page.get_by_role("button", name="Pause & stop", exact=True)).to_be_visible()
+    view["paused"] = True
+    lead["status"] = "stopping"
+    view["context_checks"][0].update(state="stopping", detail="Context stop unconfirmed.")
+    expect(page.get_by_text("Stopping", exact=True).first).to_be_visible()
+    expect(page.get_by_role("button", name="Resume room", exact=True)).to_be_disabled()
+    assert errors == []
+    context.close()
+
+
 def test_workspace_folder_picker_selection_cancel_and_model_reset(browser):
     ARTIFACTS.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="workspace-picker-", dir=ARTIFACTS) as directory:
