@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 MODE = os.environ.get("FAKE_PI_MODE", "normal")
 TRACE = os.environ.get("FAKE_PI_TRACE")
 LOCK = threading.Lock()
+PENDING_PROMPT = None
 
 
 def option(name, default=""):
@@ -151,6 +152,8 @@ for line in sys.stdin:
     elif kind == "never":
         pass
     elif kind == "get_state":
+        if MODE == "silent_state":
+            continue
         reply(
             command,
             {
@@ -181,6 +184,25 @@ for line in sys.stdin:
             },
         )
     elif kind == "prompt":
+        if MODE == "silent_prompt":
+            continue
+        if MODE in {"finished_before_ack", "finished_without_ack"}:
+            final()
+            if MODE == "finished_before_ack":
+                time.sleep(0.05)
+                reply(command, {"disposition": "started"})
+            continue
+        if MODE == "dialog_before_ack":
+            PENDING_PROMPT = command
+            emit(
+                {
+                    "type": "extension_ui_request",
+                    "id": "before-ack",
+                    "method": "confirm",
+                    "title": "Private pre-acceptance dialog",
+                }
+            )
+            continue
         if MODE == "reject":
             reply(command, success=False)
             continue
@@ -207,6 +229,9 @@ for line in sys.stdin:
             bridge()
         final(reason="error" if MODE == "provider_error" else "stop")
     elif kind == "extension_ui_response":
+        if PENDING_PROMPT is not None:
+            reply(PENDING_PROMPT, {"disposition": "started"})
+            PENDING_PROMPT = None
         final()
     elif kind == "clear_queue":
         if MODE != "stubborn":
