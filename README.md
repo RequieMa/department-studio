@@ -14,7 +14,7 @@ and the evidence needed before calling the demonstration successful.
 
 Install `uv` and configure the external Pi runtime. The bootstrap currently targets POSIX hosts and was verified on Linux. This implementation was checked against Pi **1.5.2**, including a no-prompt RPC and bridge-registration handshake. The adapter requires the documented `agent_settled`, `clear_queue`, `abort`, explicit session IDs, and resource-disable options.
 
-From the implementation checkout:
+From the repository root (`/home/zengma/department-studio`):
 
 ```bash
 uv sync --locked
@@ -31,6 +31,17 @@ uv run department-studio --pi-executable /path/to/pi
 ```
 
 Use the exact printed address: other Host headers and browser origins are rejected. The server only accepts loopback IPs, runs one process, and never enables automatic reload. Pi is not started merely by opening the room.
+
+## Source layout
+
+- `backend/src/department_studio/`: HTTP API, domain/storage, scheduling and runtime adapters. The Pi bridge is backend integration code, not browser code.
+- `frontend/`: browser HTML, JavaScript and CSS; communicates through `/api/` only. No frontend build step is required.
+- `tests/`: backend, bridge, packaging and browser integration tests.
+- `pyproject.toml` and `uv.lock`: shared root Python tooling; no second environment is needed under `backend/`.
+
+The backend serves `frontend/` in editable checkouts. Wheels bundle the same assets under `department_studio/static/`, so an installed CLI also works outside the repository. Frontend/backend remain one same-origin application; this split does not change authentication, permissions or stop behavior.
+
+For the preserved bootstrap checkout and a human-controlled runtime switch, see [root checkout integration](docs/root-integration.md).
 
 ## Configure departments
 

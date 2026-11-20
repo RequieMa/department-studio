@@ -215,7 +215,11 @@ def create_app(
         app.state.service.resume()
         return app.state.store.snapshot()
 
-    static = Path(__file__).resolve().parent / "static"
+    package = Path(__file__).resolve().parent
+    # Wheels carry assets inside the package; editable checkouts use frontend/.
+    static = package / "static"
+    if not static.is_dir():
+        static = package.parents[2] / "frontend"
 
     @app.get("/")
     async def index():

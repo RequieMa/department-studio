@@ -18,7 +18,13 @@ dependencies = [
 department-studio = "department_studio.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/department_studio"]
+packages = ["backend/src/department_studio"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"frontend" = "department_studio/static"
+
+[tool.hatch.build.targets.sdist]
+include = ["/backend", "/frontend", "/tests", "/docs", "/README.md", "/AGENTS.md", "/uv.lock"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -28,6 +34,7 @@ markers = ["browser: browser integration tests", "live: explicitly authorized li
 addopts = "-m 'not browser and not live'"
 
 [tool.ruff]
+src = ["backend/src", "."]
 line-length = 100
 target-version = "py312"
 extend-exclude = ["docs"]

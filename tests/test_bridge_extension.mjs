@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { once } from "node:events";
 import { after, before, test } from "node:test";
-import register from "../src/department_studio/pi_extension.ts";
+import register from "../backend/src/department_studio/pi_extension.ts";
 
 let server;
 let url;
