@@ -13,6 +13,23 @@ class RpcError(RuntimeError):
     """A public, sanitized transport failure."""
 
 
+class RpcTimeout(RpcError):
+    """A command deadline, with only allowlisted command/phase diagnostics."""
+
+    def __init__(self, command: str, phase: str):
+        safe_command = (
+            command
+            if command in {"get_state", "get_available_models", "prompt", "clear_queue", "abort"}
+            else "command"
+        )
+        detail = f"Pi command timed out while {phase} ({safe_command})."
+        if command == "prompt":
+            detail += (
+                " Prompt acceptance is unknown; inspect retained work before sending a new request."
+            )
+        super().__init__(detail)
+
+
 class RpcProcess:
     def __init__(
         self,
@@ -135,13 +152,15 @@ class RpcProcess:
         future = asyncio.get_running_loop().create_future()
         self._pending[request_id] = (command, future)
         try:
-            await self.send({"id": request_id, "type": command, **arguments})
+            phase = "writing input"
             try:
-                response = await asyncio.wait_for(
-                    future, self.command_timeout if timeout is None else timeout
-                )
+                # Include lock acquisition and stdin backpressure, not just the response.
+                async with asyncio.timeout(self.command_timeout if timeout is None else timeout):
+                    await self.send({"id": request_id, "type": command, **arguments})
+                    phase = "waiting for response"
+                    response = await future
             except TimeoutError as exc:
-                raise RpcError("Pi command timed out.") from exc
+                raise RpcTimeout(command, phase) from exc
             if response.get("success") is not True:
                 raise RpcError(
                     "Pi rejected the command. Check the selected model and runtime setup."
@@ -151,6 +170,10 @@ class RpcProcess:
             self._pending.pop(request_id, None)
             if not future.done():
                 future.cancel()
+            elif not future.cancelled():
+                # A reader failure may race an interrupted stdin drain. Retrieve it even
+                # when the caller never reached its response await.
+                future.exception()
 
     async def next_event(self) -> dict:
         if self._events.empty() and self._failure:

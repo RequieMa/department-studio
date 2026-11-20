@@ -229,13 +229,23 @@ class PiBackend:
                 if execution.canceled:
                     outcome = RunOutcome("interrupted")
                 else:
-                    accepted = await rpc.command("prompt", message=request.prompt)
-                    if accepted.get("disposition") == "handled":
-                        outcome = RunOutcome("completed")
-                    elif accepted.get("disposition") in ("started", "queued"):
-                        outcome = await self._collect(rpc, request, emit)
-                    else:
-                        raise RpcError("Pi returned an unsupported prompt acknowledgement.")
+                    # Subscribe before sending: input handlers can request a dialog before
+                    # acknowledging prompt acceptance, and fast runs can already settle.
+                    # Apply the existing unsupported-dialog policy while awaiting the ack.
+                    collecting = asyncio.create_task(self._collect(rpc, request, emit))
+                    try:
+                        accepted = await rpc.command("prompt", message=request.prompt)
+                        if not isinstance(accepted, dict):
+                            raise RpcError("Pi returned an invalid prompt acknowledgement.")
+                        if accepted.get("disposition") == "handled":
+                            outcome = RunOutcome("completed")
+                        elif accepted.get("disposition") in ("started", "queued"):
+                            outcome = await collecting
+                        else:
+                            raise RpcError("Pi returned an unsupported prompt acknowledgement.")
+                    finally:
+                        collecting.cancel()
+                        await asyncio.gather(collecting, return_exceptions=True)
         except asyncio.CancelledError:
             if execution:
                 execution.canceled = True
