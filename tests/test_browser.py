@@ -279,6 +279,159 @@ def test_workspace_folder_picker_selection_cancel_and_model_reset(browser):
         context.close()
 
 
+def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    room_state = {
+        "paused": True,
+        "messages": [],
+        "deliveries": [],
+        "leads": [
+            {
+                "id": "atlas", "name": "Atlas", "handle": "atlas", "provider": "test",
+                "model_id": "model-a", "workspace": "/workspace", "enabled": True,
+                "permission": "discuss", "status": "running",
+            },
+            {
+                "id": "canvas", "name": "Canvas", "handle": "canvas", "provider": "test",
+                "model_id": "model-b", "workspace": "/workspace", "enabled": True,
+                "permission": "discuss", "status": "queued",
+            },
+            {
+                "id": "disabled", "name": "Disabled", "handle": "disabled", "provider": "test",
+                "model_id": "model-c", "workspace": "/workspace", "enabled": False,
+                "permission": "discuss", "status": "idle",
+            },
+            {
+                "id": "deleted", "name": "Old team", "handle": "old", "provider": "test",
+                "model_id": "model-d", "workspace": "/workspace", "enabled": True,
+                "deleted": True, "permission": "discuss", "status": "idle",
+            },
+        ],
+    }
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    composer.fill("@")
+    choices = page.get_by_role("listbox", name="Available departments")
+    expect(choices).to_be_visible()
+    expect(choices.get_by_role("option", name="All departments, @all")).to_be_visible()
+    expect(choices.get_by_role("option", name="Atlas, @atlas")).to_be_visible()
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    expect(choices.get_by_role("option", name="Disabled, @disabled")).not_to_be_visible()
+    expect(choices.get_by_role("option", name="Old team, @old")).not_to_be_visible()
+
+    composer.press("ArrowDown")
+    composer.press("Tab")
+    expect(composer).to_have_value("@atlas")
+    expect(choices).not_to_be_visible()
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+
+    composer.fill("Discuss @can now")
+    composer.evaluate(
+        "node => { node.setSelectionRange(12, 12); "
+        "node.dispatchEvent(new Event('click', {bubbles: true})); }"
+    )
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    composer.press("Enter")
+    expect(composer).to_have_value("Discuss @canvas now")
+
+    composer.fill("mail@can")
+    expect(choices).not_to_be_visible()
+    composer.fill("@can")
+    composer.dispatch_event("compositionstart")
+    expect(choices).not_to_be_visible()
+    composer.dispatch_event("compositionend")
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    composer.press("Escape")
+    expect(choices).not_to_be_visible()
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+    composer.fill("@can")
+    expect(choices.get_by_role("option", name="Canvas, @canvas")).to_be_visible()
+    page.get_by_role("button", name="Add department", exact=True).focus()
+    expect(choices).not_to_be_visible()
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+    composer.fill("@can")
+    choices.get_by_role("option", name="Canvas, @canvas").click()
+    expect(composer).to_have_value("@canvas")
+    page.wait_for_timeout(1200)
+    expect(choices).not_to_be_visible()
+    context.close()
+
+
+def test_delete_department_confirmation_uses_revision_and_blocks_busy_departments(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    lead = {
+        "id": "atlas", "name": "Atlas", "handle": "atlas", "provider": "test",
+        "model_id": "model-a", "workspace": "/workspace", "enabled": True,
+        "permission": "discuss", "status": "idle", "revision": 4,
+    }
+    room_state = {"paused": False, "messages": [], "deliveries": [], "leads": [lead]}
+    deleted_requests = []
+
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+
+    def delete_atlas(route):
+        deleted_requests.append(route.request)
+        assert route.request.method == "DELETE"
+        room_state["leads"] = []
+        route.fulfill(
+            status=200,
+            json={"id": "atlas", "revision": 5, "deleted_at": "2026-11-20T04:00:00+00:00"},
+        )
+
+    page.route("**/api/leads/atlas*", delete_atlas)
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    composer.fill("Keep this draft")
+    page.get_by_role("button", name="Edit Atlas", exact=True).click()
+    department = page.get_by_role("dialog", name="Edit department")
+    department.get_by_role("button", name="Delete department…", exact=True).click()
+    confirmation = page.get_by_role("dialog", name="Delete department")
+    expect(confirmation.get_by_text("public room history", exact=False)).to_be_visible()
+    expect(confirmation.get_by_text("workspace files are retained", exact=False)).to_be_visible()
+    expect(confirmation.get_by_text("handle remains reserved", exact=False)).to_be_visible()
+    delete_input = confirmation.get_by_label("Type the department handle to confirm", exact=True)
+    delete_input.fill("@atlas")
+    confirmation.get_by_role("button", name="Delete department", exact=True).click()
+    expect(confirmation).not_to_be_visible()
+    expect(page.get_by_role("button", name="Edit Atlas", exact=True)).not_to_be_visible()
+    expect(page.get_by_text("Name your first department", exact=True)).to_be_visible()
+    expect(composer).to_have_value("Keep this draft")
+    assert len(deleted_requests) == 1
+    assert "revision=4" in deleted_requests[0].url
+
+    room_state["leads"] = [{**lead, "status": "running"}]
+    page.reload()
+    page.get_by_role("button", name="Edit Atlas", exact=True).click()
+    department = page.get_by_role("dialog", name="Edit department")
+    department.get_by_role("button", name="Delete department…", exact=True).click()
+    confirmation = page.get_by_role("dialog", name="Delete department")
+    expect(
+        confirmation.get_by_text("queued, running or stopping work", exact=False)
+    ).to_be_visible()
+    expect(confirmation.get_by_text("Pause & stop", exact=False)).to_be_visible()
+    expect(
+        confirmation.get_by_role("button", name="Delete department", exact=True)
+    ).to_be_disabled()
+    assert len(deleted_requests) == 1
+    context.close()
+
+
 def test_workspace_folder_picker_error_recovery_and_mobile_focus(browser):
     context = browser.new_context(viewport={"width": 390, "height": 844}, reduced_motion="reduce")
     page = context.new_page()

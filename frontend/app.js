@@ -19,9 +19,14 @@ let modelOptions = new Map();
 let modelRequest = null;
 let folderRequest = null;
 let folderListing = null;
+let composingMessage = false;
+let mentionState = { context: null, options: [], active: 0 };
+let mentionDismissedKey = null;
+let deleting = false;
 const rosterNodes = new Map();
 const messageNodes = new Map();
 const dialog = $("#lead-dialog");
+const deleteDialog = $("#delete-dialog");
 const folderDialog = $("#folder-dialog");
 
 function text(node, value) {
@@ -74,6 +79,13 @@ function tone(id) {
 }
 
 function renderRoster() {
+  const leadIds = new Set(state.leads.map((lead) => lead.id));
+  for (const [id, card] of rosterNodes) {
+    if (!leadIds.has(id)) {
+      card.remove();
+      rosterNodes.delete(id);
+    }
+  }
   text($("#lead-count"), state.leads.length);
   $("#roster-empty").hidden = state.leads.length > 0;
   for (const lead of state.leads) {
@@ -127,10 +139,14 @@ function renderMessages() {
       const time = element("time", "", new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
       time.dateTime = message.timestamp;
       time.title = new Date(message.timestamp).toLocaleString();
-      header.append(avatar, element("span", "message-author", message.sender_name),
-        element("span", "message-handle", message.sender_kind === "human" ? "project lead" : `@${message.sender_handle}`), time);
+      const identity = element("div", "message-identity");
+      identity.append(
+        element("span", "message-author", message.sender_name),
+        element("span", "message-handle", message.sender_kind === "human" ? "You · project lead" : `Department · @${message.sender_handle}`),
+      );
+      header.append(avatar, identity, time);
       article.append(header, element("div", "message-text", message.text));
-      if (message.recipient_handles.length) {
+      if (message.recipient_handles?.length) {
         article.append(element("div", "recipient-label", `To ${message.recipient_handles.map((handle) => `@${handle}`).join(", ")}`));
       }
       if (message.notice) article.append(element("p", "message-notice", message.notice));
@@ -146,7 +162,7 @@ function renderMessages() {
         row.dataset.delivery = delivery.id;
         list.append(row);
       }
-      const handle = message.recipient_handles[message.recipient_ids.indexOf(delivery.lead_id)] || "department";
+      const handle = message.recipient_handles?.[message.recipient_ids?.indexOf(delivery.lead_id)] || "department";
       const diagnostic = ["Runtime started.", "Runtime is working."].includes(delivery.diagnostic) ? "" : delivery.diagnostic;
       const detail = delivery.error || diagnostic || "";
       text(row, `@${handle} · ${delivery.state}${detail ? ` — ${detail}` : ""}`);
@@ -155,6 +171,25 @@ function renderMessages() {
   }
   if (firstSnapshot || nearBottom) conversation.scrollTop = conversation.scrollHeight;
   firstSnapshot = false;
+}
+
+function renderActivity() {
+  const activeIds = [...new Set(state.deliveries
+    .filter((delivery) => delivery.state === "running")
+    .map((delivery) => delivery.lead_id))];
+  const names = activeIds
+    .map((id) => state.leads.find((lead) => lead.id === id))
+    .filter(Boolean)
+    .map((lead) => lead.name);
+  const indicator = $("#typing-indicator");
+  if (!names.length) {
+    indicator.hidden = true;
+    text($("#typing-text"), "");
+    return;
+  }
+  const people = names.length === 1 ? names[0] : names.length === 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+  text($("#typing-text"), `${people} ${names.length === 1 ? "is" : "are"} typing a reply…`);
+  indicator.hidden = false;
 }
 
 function renderControls() {
@@ -192,6 +227,7 @@ async function refresh() {
       renderRoster();
       renderMessages();
       renderControls();
+      renderActivity();
       previewRecipients();
     } catch {
       if (authenticated) text($("#connection"), "Reconnecting…");
@@ -200,9 +236,8 @@ async function refresh() {
   return polling;
 }
 
-function previewRecipients() {
-  const input = $("#message-text").value;
-  const handles = Array.from(input.matchAll(/(?:^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_-]+)/gu), (match) => match[1].toLowerCase());
+function recipientsIn(textValue) {
+  const handles = Array.from(textValue.matchAll(/(?:^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_-]+)/gu), (match) => match[1].toLowerCase());
   const selected = new Set();
   const unknown = [];
   for (const handle of handles) {
@@ -210,17 +245,156 @@ function previewRecipients() {
     else if (state.leads.some((lead) => lead.handle === handle && lead.enabled)) selected.add(handle);
     else unknown.push(handle);
   }
-  const invalid = unknown.length > 0;
-  let description = "Public note · no department will be notified";
-  if (invalid) description = `Unknown or disabled: ${[...new Set(unknown)].map((handle) => `@${handle}`).join(", ")}`;
-  else if (selected.size) description = `To ${[...selected].map((handle) => `@${handle}`).join(", ")}${state.paused ? " · room paused; this note will not start work" : ""}`;
-  text($("#recipient-preview"), description);
-  $("#recipient-preview").classList.toggle("invalid", invalid);
-  $("#send").disabled = !authenticated || sending || invalid || !input.trim();
+  return { selected: [...selected], unknown: [...new Set(unknown)] };
 }
 
-$("#message-text").addEventListener("input", previewRecipients);
+function currentMentionContext() {
+  const input = $("#message-text");
+  const { value, selectionStart, selectionEnd } = input;
+  if (selectionStart !== selectionEnd) return null;
+  const beforeCaret = value.slice(0, selectionStart);
+  const match = /(?:^|[^\p{L}\p{N}_@])@([\p{L}\p{N}_-]*)$/u.exec(beforeCaret);
+  if (!match) return null;
+  const query = match[1];
+  const start = selectionStart - query.length - 1;
+  const suffix = /^[\p{L}\p{N}_-]*/u.exec(value.slice(selectionStart))?.[0] || "";
+  return { start, end: selectionStart + suffix.length, query: query.toLocaleLowerCase() };
+}
+
+function mentionChoices(query) {
+  const normalized = query.toLocaleLowerCase();
+  const matches = state.leads
+    .filter((lead) => lead.enabled && lead.deleted !== true)
+    .filter((lead) => !normalized || lead.handle.toLocaleLowerCase().includes(normalized) || lead.name.toLocaleLowerCase().includes(normalized))
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }) || left.handle.localeCompare(right.handle));
+  const all = { name: "All departments", handle: "all", all: true };
+  return (!normalized || all.name.toLocaleLowerCase().includes(normalized) || all.handle.includes(normalized)) ? [all, ...matches] : matches;
+}
+
+function mentionKey(context = currentMentionContext()) {
+  if (!context) return null;
+  const input = $("#message-text");
+  return `${input.value}\u0000${input.selectionStart}\u0000${input.selectionEnd}\u0000${context.start}\u0000${context.end}`;
+}
+
+function dismissMentions({ remember = false } = {}) {
+  if (remember) mentionDismissedKey = mentionKey();
+  mentionState = { context: null, options: [], active: 0 };
+  $("#mention-menu").hidden = true;
+  $("#message-text").setAttribute("aria-expanded", "false");
+  $("#message-text").removeAttribute("aria-activedescendant");
+}
+
+function setMentionActive(index) {
+  if (!mentionState.options.length) return;
+  mentionState.active = (index + mentionState.options.length) % mentionState.options.length;
+  document.querySelectorAll(".mention-option").forEach((option, optionIndex) => {
+    option.setAttribute("aria-selected", String(optionIndex === mentionState.active));
+  });
+  const active = document.querySelectorAll(".mention-option")[mentionState.active];
+  if (active) {
+    $("#message-text").setAttribute("aria-activedescendant", active.id);
+    active.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function chooseMention(index = mentionState.active) {
+  const option = mentionState.options[index];
+  const context = currentMentionContext();
+  if (!option || !context) { dismissMentions(); return; }
+  const input = $("#message-text");
+  const inserted = `@${option.handle}`;
+  input.value = `${input.value.slice(0, context.start)}${inserted}${input.value.slice(context.end)}`;
+  const caret = context.start + inserted.length;
+  input.setSelectionRange(caret, caret);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  dismissMentions({ remember: true });
+}
+
+function renderMentions({ deliberate = false } = {}) {
+  const input = $("#message-text");
+  if (composingMessage || document.activeElement !== input) { dismissMentions(); return; }
+  const context = currentMentionContext();
+  if (!context) { dismissMentions(); return; }
+  const key = mentionKey(context);
+  if (mentionDismissedKey === key && !deliberate) { dismissMentions(); return; }
+  if (deliberate) mentionDismissedKey = null;
+  const previous = mentionState.options[mentionState.active]?.handle;
+  const options = mentionChoices(context.query);
+  if (!options.length) { dismissMentions(); return; }
+  mentionState = { context, options, active: Math.max(0, options.findIndex((option) => option.handle === previous)) };
+  const nodes = document.createDocumentFragment();
+  options.forEach((option, index) => {
+    const node = element("button", `mention-option${option.all ? " mention-option-all" : ""}`);
+    node.type = "button";
+    node.id = `mention-option-${option.handle}`;
+    node.setAttribute("role", "option");
+    node.setAttribute("aria-selected", String(index === mentionState.active));
+    node.setAttribute("aria-label", option.all ? "All departments, @all" : `${option.name}, @${option.handle}`);
+    node.append(element("span", "mention-option-name", option.all ? "departments" : option.name), element("span", "mention-option-handle", `@${option.handle}`));
+    node.addEventListener("pointerdown", (event) => event.preventDefault());
+    node.addEventListener("click", () => chooseMention(index));
+    nodes.append(node);
+  });
+  $("#mention-options").replaceChildren(nodes);
+  $("#mention-menu").hidden = false;
+  $("#message-text").setAttribute("aria-expanded", "true");
+  setMentionActive(mentionState.active);
+}
+
+function renderRecipientContext(selected) {
+  const recipient = selected.length ? selected.map((handle) => `@${handle}`).join(", ") : "the room";
+  text($("#room-recipient"), recipient);
+  $("#recipient-context").classList.toggle("addressed", selected.length > 0);
+}
+
+function previewRecipients({ deliberate = false } = {}) {
+  const input = $("#message-text").value;
+  const { selected, unknown } = recipientsIn(input);
+  const invalid = unknown.length > 0;
+  let description = "Public note · no department will be notified";
+  if (invalid) description = `Unknown or disabled: ${unknown.map((handle) => `@${handle}`).join(", ")}`;
+  else if (selected.length) description = `To ${selected.map((handle) => `@${handle}`).join(", ")}${state.paused ? " · room paused; this note will not start work" : ""}`;
+  text($("#recipient-preview"), description);
+  renderRecipientContext(selected);
+  $("#recipient-preview").classList.toggle("invalid", invalid);
+  $("#send").disabled = !authenticated || sending || invalid || !input.trim();
+  renderMentions({ deliberate });
+}
+
+$("#message-text").addEventListener("compositionstart", () => {
+  composingMessage = true;
+  dismissMentions();
+});
+$("#message-text").addEventListener("compositionend", () => {
+  composingMessage = false;
+  previewRecipients({ deliberate: true });
+});
+$("#message-text").addEventListener("input", () => {
+  if (!composingMessage) previewRecipients({ deliberate: true });
+});
+$("#message-text").addEventListener("focus", () => {
+  if (!composingMessage) previewRecipients({ deliberate: true });
+});
+$("#message-text").addEventListener("blur", () => dismissMentions());
+$("#message-text").addEventListener("click", () => {
+  if (!composingMessage) previewRecipients({ deliberate: true });
+});
+$("#message-text").addEventListener("keyup", (event) => {
+  if (!composingMessage && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) previewRecipients({ deliberate: true });
+});
 $("#message-text").addEventListener("keydown", (event) => {
+  if (composingMessage || event.isComposing) return;
+  if (!$("#mention-menu").hidden) {
+    if (event.key === "ArrowDown") { event.preventDefault(); setMentionActive(mentionState.active + 1); return; }
+    if (event.key === "ArrowUp") { event.preventDefault(); setMentionActive(mentionState.active - 1); return; }
+    if ((event.key === "Enter" && !event.ctrlKey && !event.metaKey) || event.key === "Tab") {
+      event.preventDefault();
+      chooseMention();
+      return;
+    }
+    if (event.key === "Escape") { event.preventDefault(); dismissMentions({ remember: true }); return; }
+  }
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !$("#send").disabled) {
     event.preventDefault();
     $("#composer").requestSubmit();
@@ -278,6 +452,7 @@ function openDepartment(lead = null) {
   }
   text($("#model-help"), "Uses your existing Pi provider configuration. Listing a model does not verify its connection.");
   $("#load-models").disabled = false;
+  $("#delete-department").hidden = !lead;
   notice("#form-error");
   updatePermission();
   dialog.showModal();
@@ -291,6 +466,62 @@ function updatePermission() {
   $("#save-department").disabled = saving || (needsConsent && !$("#develop-consent").checked);
   text($("#save-department"), needsConsent ? "Enable Develop and save" : "Save department");
 }
+
+function departmentBusy(lead) {
+  return ["queued", "running", "stopping"].includes(lead?.status);
+}
+
+function updateDeleteAction() {
+  const busy = departmentBusy(editing);
+  const expected = `@${editing?.handle || ""}`;
+  const matches = $("#delete-confirmation").value.trim().toLocaleLowerCase() === expected.toLocaleLowerCase();
+  $("#confirm-delete").disabled = deleting || busy || !matches;
+}
+
+function openDeleteDialog() {
+  if (!editing) return;
+  const busy = departmentBusy(editing);
+  text($("#delete-department-name"), `${editing.name} (@${editing.handle})`);
+  $("#delete-confirmation").value = "";
+  $("#delete-confirmation").placeholder = `@${editing.handle}`;
+  $("#delete-confirmation").disabled = busy;
+  $("#delete-confirmation-field").hidden = busy;
+  $("#delete-busy-note").hidden = !busy;
+  if (busy) text($("#delete-busy-note"), "This department has queued, running or stopping work. Wait for it to become ready, or use Pause & stop for the room and wait for confirmed stop before deleting.");
+  notice("#delete-error");
+  deleting = false;
+  updateDeleteAction();
+  deleteDialog.showModal();
+  if (busy) $("#cancel-delete").focus();
+  else $("#delete-confirmation").focus();
+}
+
+$("#delete-department").addEventListener("click", openDeleteDialog);
+$("#delete-confirmation").addEventListener("input", updateDeleteAction);
+for (const id of ["close-delete-dialog", "cancel-delete"]) $(`#${id}`).addEventListener("click", () => deleteDialog.close());
+$("#confirm-delete").addEventListener("click", async () => {
+  if (!editing || $("#confirm-delete").disabled) return;
+  const deleted = editing;
+  deleting = true;
+  updateDeleteAction();
+  notice("#delete-error");
+  try {
+    await request(`/api/leads/${encodeURIComponent(deleted.id)}?revision=${encodeURIComponent(deleted.revision)}`, { method: "DELETE" });
+    deleteDialog.close();
+    dialog.close();
+    await refresh();
+  } catch (error) {
+    notice("#delete-error", error.message);
+    if (/revision|stale|changed/i.test(error.message)) {
+      await refresh();
+      editing = state.leads.find((lead) => lead.id === deleted.id) || null;
+      $("#delete-confirmation").value = "";
+    }
+  } finally {
+    deleting = false;
+    updateDeleteAction();
+  }
+});
 
 $("#add-department").addEventListener("click", () => openDepartment());
 for (const id of ["close-dialog", "cancel-dialog"]) $(`#${id}`).addEventListener("click", () => dialog.close());
