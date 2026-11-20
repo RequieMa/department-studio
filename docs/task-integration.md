@@ -14,8 +14,9 @@ Included source lines:
 - Frontend actionable-only browser expectations: `0510511`.
 - Frontend retained blocked/resolved decision history: `f05e255`.
 - Backend boundary regression and installed-wheel checks: `440f3ac`.
+- Admin's documentation-only `main` update: `a5462a0`, incorporated by `57c43f7`.
 
-`e288af0` combines these source lines. This checkpoint additionally extends genuine
+`e288af0` combines the task/RPC/frontend source lines. This checkpoint additionally extends genuine
 browser coverage for retained decision history after resolution, closure/reopen,
 owner deletion and reload. The final tested candidate SHA is recorded in the room.
 
@@ -47,10 +48,19 @@ a foreign-key failure; it now returns a validation error with no partial writes.
 
 ## Merge blocker — unrelated root work
 
-At this checkpoint root `main` still points at `816a9f9`, but has unrelated,
-uncommitted runtime/context/UI work. Neither department owns that work as part of
-this task integration. It has **not** been staged, stashed, discarded or overwritten.
-The verified task candidate has **not** been merged into that dirty worktree.
+Root `main` advanced from `816a9f9` to admin's `a5462a0` documentation commit.
+That commit merged cleanly into the isolated candidate. Root still has unrelated,
+uncommitted runtime/context/UI work, including changes to seven paths that also
+change in the task feature: `service.py`, `store.py`, `frontend/app.js`,
+`frontend/style.css`, `test_browser.py`, `test_migrations.py`, and `test_packaging.py`.
+Neither department owns that work as part of this task integration. It has **not**
+been staged, stashed, discarded or overwritten. The task candidate has **not** been
+merged into that dirty worktree; committing documentation did not clear this overlap.
+
+Admin's new documentation describes Resume/context maintenance whose implementation
+is not present in the committed candidate. The task verification here does not
+validate or claim to ship that uncommitted runtime work. Its owner must reconcile
+the source/documentation and any relevant schema/control-policy changes separately.
 
 The human or owner of those edits must reconcile them first. If reconciliation
 changes `main`, integrate that new commit into the isolated candidate, resolve any
