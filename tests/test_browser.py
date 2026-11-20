@@ -367,6 +367,117 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
     context.close()
 
 
+def test_composer_enter_sends_shift_enter_adds_newlines_and_keeps_drafts(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    room_state = {
+        "paused": False, "messages": [], "deliveries": [],
+        "leads": [{
+            "id": "atlas", "name": "Atlas", "handle": "atlas", "provider": "test",
+            "model_id": "model-a", "workspace": "/workspace", "enabled": True,
+            "permission": "discuss", "status": "idle",
+        }],
+    }
+    posted = []
+    mode = {"failure": False, "hold": False, "pending": None}
+
+    page.route(
+        "**/api/state",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(room_state)
+        ),
+    )
+
+    def post_message(route):
+        posted.append(json.loads(route.request.post_data))
+        if mode["hold"]:
+            mode["pending"] = route
+        elif mode["failure"]:
+            route.fulfill(status=500, json={"detail": "Synthetic send failure"})
+        else:
+            route.fulfill(status=200, json={"id": f"message-{len(posted)}"})
+
+    page.route("**/api/messages", post_message)
+    page.goto(ORIGIN + "/#token=" + TOKEN)
+    composer = page.get_by_label("Message to the room", exact=True)
+    expect(
+        page.get_by_text("Enter to send · Shift+Enter for a new line", exact=True)
+    ).to_be_visible()
+
+    composer.fill("plain Enter")
+    composer.press("Enter")
+    expect.poll(lambda: len(posted)).to_equal(1)
+    expect(composer).to_have_value("")
+
+    composer.fill("beforeafter")
+    composer.evaluate("node => node.setSelectionRange(6, 6)")
+    composer.press("Shift+Enter")
+    expect(composer).to_have_value("before\nafter")
+    assert len(posted) == 1
+
+    composer.fill("@at")
+    expect(page.get_by_role("listbox", name="Available departments")).to_be_visible()
+    composer.press("Shift+Enter")
+    expect(composer).to_have_value("@at\n")
+    assert len(posted) == 1
+    composer.fill("@at")
+    composer.press("Shift+Tab")
+    expect(composer).to_have_value("@at")
+    assert len(posted) == 1
+    composer.focus()
+    composer.press("Enter")
+    expect(composer).to_have_value("@atlas")
+    assert len(posted) == 1
+    composer.press("Enter")
+    expect.poll(lambda: len(posted)).to_equal(2)
+
+    # Composition confirmation, including the post-composition keyCode 229 fallback, is inert.
+    composer.fill("IME draft")
+    composer.dispatch_event("compositionstart")
+    composer.dispatch_event("keydown", {"key": "Enter", "isComposing": True})
+    composer.dispatch_event("compositionend")
+    composer.evaluate(
+        "node => { const event = new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}); "
+        "Object.defineProperty(event, 'keyCode', {value: 229}); node.dispatchEvent(event); }"
+    )
+    assert len(posted) == 2
+    expect(composer).to_have_value("IME draft")
+
+    composer.fill("held Enter")
+    composer.evaluate("""node => {
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', repeat: true, bubbles: true}));
+      node.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', repeat: true, bubbles: true}));
+    }""")
+    expect.poll(lambda: len(posted)).to_equal(3)
+
+    composer.fill("   ")
+    composer.press("Enter")
+    assert len(posted) == 3
+    composer.fill("@unknown")
+    composer.press("Enter")
+    assert len(posted) == 3
+
+    mode["hold"] = True
+    composer.fill("in flight")
+    composer.press("Enter")
+    expect.poll(lambda: mode["pending"] is not None).to_be_truthy()
+    composer.press("Enter")
+    assert len(posted) == 4
+    mode["hold"] = False
+    mode["pending"].fulfill(status=200, json={"id": "in-flight"})
+    expect(composer).to_have_value("")
+
+    mode["failure"] = True
+    composer.fill("keep after failure")
+    composer.press("Control+Enter")
+    expect(page.locator("#composer-error")).to_contain_text("Synthetic send failure")
+    expect(composer).to_have_value("keep after failure")
+    assert len(posted) == 5
+    mode["failure"] = False
+    context.close()
+
+
 def test_delete_department_confirmation_uses_revision_and_blocks_busy_departments(browser):
     context = browser.new_context()
     page = context.new_page()
