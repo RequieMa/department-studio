@@ -1,0 +1,36 @@
+# Department Studio model catalog.
+#
+# Only OpenAI-compatible HTTPS endpoints are accepted. The launching environment
+# must provide the named key; never put an API key in this file or commit one.
+# Runtimes that use a different wire protocol (Claude Code and DeepSeek Harness)
+# receive the model id and, when present, the provider's Anthropic-compatible
+# endpoint below. The catalog stays the single source of selectable models.
+
+[[providers]]
+id = "deepseek"
+name = "DeepSeek"
+api = "openai-completions"
+base_url = "https://api.deepseek.com"
+anthropic_base_url = "https://api.deepseek.com/anthropic"
+api_key_env = "DEEPSEEK_API_KEY"
+
+# Passed through to Pi's generated models.json for DeepSeek reasoning history.
+[providers.pi_compat]
+requiresReasoningContentOnAssistantMessages = true
+thinkingFormat = "deepseek"
+
+[[providers.models]]
+id = "deepseek-v4-flash"
+name = "DeepSeek V4 Flash"
+context_window = 1000000
+max_output_tokens = 384000
+reasoning = true
+runtimes = ["pi", "claude", "deepseek"]
+
+[[providers.models]]
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+context_window = 1000000
+max_output_tokens = 384000
+reasoning = true
+runtimes = ["pi", "claude", "deepseek"]

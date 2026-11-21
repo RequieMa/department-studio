@@ -89,13 +89,7 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
     expect(page.locator("#recipient-preview")).to_contain_text("@atlas")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text("Synthetic test reply from 星图 Studio.", exact=True)).to_be_visible()
-    expect(page.locator("#activity-toast")).to_have_text("@atlas finished this run")
-    expect(page.locator("#activity-count")).to_have_text("1")
-    page.get_by_role("button", name="Activity 1", exact=True).click()
-    expect(page.get_by_role("region", name="Run activity")).to_contain_text(
-        "@atlas finished this run"
-    )
-    page.get_by_role("button", name="Mark all read", exact=True).click()
+    # Ordinary completion remains in the room; Activity is reserved for explicit decisions.
     expect(page.locator("#activity-count")).to_be_hidden()
 
     page.get_by_role("button", name="Edit 星图 Studio", exact=True).click()
@@ -369,14 +363,11 @@ def test_workspace_folder_picker_selection_cancel_and_model_reset(browser):
         picker.get_by_role("button", name="Project folder", exact=True).click()
         expect(picker.locator("#folder-location")).to_have_text(str(ROOT))
         picker.get_by_role("button", name="Use this folder", exact=True).click()
-        expect(model).to_be_disabled()
-        expect(model).to_have_value("")
+        expect(model).to_be_enabled()
+        expect(model).to_have_value(selected)
         expect(department.get_by_label("Role and instructions", exact=True)).to_have_value(
             "Check workspace setup"
         )
-        department.get_by_role("button", name="Load models", exact=True).click()
-        expect(model).to_be_enabled()
-        model.select_option(label="Synthetic A · test / model-a")
         department.get_by_role("button", name="Save department", exact=True).click()
         expect(department).not_to_be_visible()
         changed = next(lead for lead in snapshot()["leads"] if lead["handle"] == "paths")
@@ -543,7 +534,7 @@ def test_recipient_context_wraps_and_running_activity_is_not_typing(browser):
     context.close()
 
 
-def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
+def test_normal_delivery_transitions_do_not_create_actionable_activity(browser):
     context = browser.new_context()
     page = context.new_page()
     message = {
@@ -575,41 +566,42 @@ def test_run_activity_baseline_bursts_lifecycle_and_focus(browser):
         "messages": [message],
         "deliveries": [delivery("old", "completed")],
     }
+    empty_tasks = {"tasks": [], "next_cursor": None, "open_count": 0}
+    empty_actions = {"action_requests": [], "next_cursor": None}
     page.route(
         "**/api/state",
         lambda route: route.fulfill(
             status=200, content_type="application/json", body=json.dumps(current)
         ),
     )
+    page.route(
+        "**/api/tasks**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(empty_tasks)
+        ),
+    )
+    page.route(
+        "**/api/action-requests**",
+        lambda route: route.fulfill(
+            status=200, content_type="application/json", body=json.dumps(empty_actions)
+        ),
+    )
     page.goto(ORIGIN + "/#token=" + TOKEN)
     expect(page.get_by_text("Connected locally", exact=True)).to_be_visible()
-    expect(page.locator("#activity-count")).to_be_hidden()  # Initial history is a silent baseline.
+    expect(page.locator("#activity-count")).to_be_hidden()
 
+    # Completed, failed, stopping and interrupted runs are room history, not decisions.
     current["deliveries"] = [
-        delivery("failed-first", "failed"),
-        *[delivery(f"success-{number}", "completed") for number in range(55)],
+        delivery("failed", "failed"),
+        delivery("completed", "completed"),
+        delivery("stopping", "stopping"),
+        delivery("interrupted", "interrupted"),
     ]
-    expect(page.locator("#activity-count")).to_have_text("50", timeout=5000)
-    page.get_by_role("button", name="Activity 50", exact=True).click()
-    expect(page.locator("#activity-list li")).to_have_count(50)
-    expect(page.locator("#activity-overflow")).to_contain_text("1 non-success")
-    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas finished this run")
-
-    focused_key = page.locator("#activity-list li").first.get_attribute("data-activity")
-    focused = page.locator(f'#activity-list [data-activity="{focused_key}"] button').first
-    focused.focus()
-    current["deliveries"].append(delivery("new", "completed"))
     page.wait_for_timeout(1200)
-    expect(focused).to_be_focused()
-
-    # A single stable row is updated for stopping -> interrupted, and repeated
-    # snapshots do not create another row.
-    current["deliveries"] = [delivery("life", "stopping")]
-    page.wait_for_timeout(1200)
-    current["deliveries"][0]["state"] = "interrupted"
-    page.wait_for_timeout(1200)
-    expect(page.locator("#activity-list")).to_contain_text("@historic-atlas interrupted this run")
-    expect(page.locator("#activity-list li")).to_have_count(50)
+    expect(page.locator("#activity-count")).to_be_hidden()
+    page.get_by_role("button", name="Activity", exact=True).click()
+    expect(page.locator("#activity-summary")).to_have_text("No decisions or actions requested.")
+    expect(page.locator("#activity-list li")).to_have_count(0)
     context.close()
 
 
@@ -937,3 +929,38 @@ def test_workspace_folder_picker_error_recovery_and_mobile_focus(browser):
     expect(department).not_to_be_visible()
     expect(page.get_by_role("button", name="Add department", exact=True)).to_be_focused()
     context.close()
+
+
+def test_runtime_selector_persists_the_department_runtime(browser):
+    context = browser.new_context(viewport={"width": 1440, "height": 1000})
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        page.goto(ORIGIN + "/#token=" + TOKEN)
+        page.get_by_role("button", name="Add department", exact=True).click()
+        dialog = page.get_by_role("dialog", name="New department")
+        dialog.get_by_label("Department name", exact=True).fill("Runtime pick")
+        dialog.get_by_label("Handle", exact=True).fill("runtime_pick")
+        dialog.get_by_label("Role and instructions", exact=True).fill("Exercise runtime selection")
+        dialog.get_by_role("button", name="Browse folders", exact=True).click()
+        picker = page.get_by_role("dialog", name="Choose workspace folder")
+        picker.get_by_role("button", name="Use this folder", exact=True).click()
+        runtime = dialog.get_by_label("Agent runtime", exact=True)
+        expect(runtime).to_have_value("pi")
+        runtime.select_option("claude")
+        dialog.get_by_role("button", name="Load models", exact=True).click()
+        model = dialog.get_by_label("Model", exact=True)
+        expect(model).to_be_enabled()
+        model.select_option(label="Synthetic A · test / model-a")
+        dialog.get_by_role("button", name="Save department", exact=True).click()
+        expect(dialog).not_to_be_visible()
+        lead = next(item for item in snapshot()["leads"] if item["handle"] == "runtime_pick")
+        assert lead["backend_kind"] == "claude"
+        page.get_by_role("button", name="Edit Runtime pick", exact=True).click()
+        dialog = page.get_by_role("dialog", name="Edit department")
+        expect(dialog.get_by_label("Agent runtime", exact=True)).to_have_value("claude")
+        expect(dialog.get_by_label("Model", exact=True)).to_have_value("0")
+        assert errors == []
+    finally:
+        context.close()

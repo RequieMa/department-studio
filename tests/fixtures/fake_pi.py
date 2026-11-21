@@ -107,12 +107,22 @@ def bridge():
         trace({"bridge_status": response.status})
 
 
+AGENT_DIR = os.environ.get("PI_CODING_AGENT_DIR")
+MODELS_CONFIG = None
+if AGENT_DIR:
+    try:
+        MODELS_CONFIG = json.loads((Path(AGENT_DIR) / "models.json").read_text())
+    except (OSError, ValueError):
+        MODELS_CONFIG = {"error": "unreadable"}
 trace(
     {
         "argv": sys.argv[1:],
         "cwd": os.getcwd(),
         "bridge_token": os.environ.get("DEPARTMENT_STUDIO_BRIDGE_TOKEN"),
         "owner_present": "DEPARTMENT_STUDIO_OWNER_TOKEN" in os.environ,
+        "agent_dir": AGENT_DIR,
+        "models_config": MODELS_CONFIG,
+        "model_key_present": bool(os.environ.get("DEPARTMENT_STUDIO_MODEL_API_KEY")),
         "extension_digest": hashlib.sha256(Path(option("-e")).read_bytes()).hexdigest()
         if "-e" in sys.argv
         else None,

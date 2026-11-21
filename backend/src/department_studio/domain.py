@@ -55,7 +55,7 @@ class LeadCreate:
     workspace: str
     enabled: bool = True
     permission: Literal["discuss", "develop"] = "discuss"
-    backend_kind: Literal["pi"] = "pi"
+    backend_kind: Literal["pi", "claude", "deepseek"] = "pi"
 
     def __post_init__(self):
         for field, limit in (("name", 80), ("role", 8000), ("provider", 200), ("model_id", 200)):
@@ -72,8 +72,8 @@ class LeadCreate:
             raise Invalid("enabled must be a boolean.")
         if self.permission not in {"discuss", "develop"}:
             raise Invalid("Permission must be discuss or develop.")
-        if self.backend_kind != "pi":
-            raise Invalid("Only the Pi runtime is supported in this bootstrap.")
+        if self.backend_kind not in {"pi", "claude", "deepseek"}:
+            raise Invalid("Choose the Pi, Claude Code or DeepSeek Harness runtime.")
 
 
 @dataclass(frozen=True, kw_only=True)

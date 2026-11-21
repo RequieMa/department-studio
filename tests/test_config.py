@@ -1,4 +1,5 @@
 import os
+import shutil
 import stat
 from pathlib import Path
 
@@ -52,9 +53,27 @@ def test_ipv6_origin():
     assert Settings(host="::1", pi_executable="/bin/true").origin == "http://[::1]:8765"
 
 
-def test_missing_pi_is_actionable():
-    with pytest.raises(ValueError, match="Pi executable"):
-        Settings(pi_executable="/missing/department-studio-pi")
+def test_missing_runtime_does_not_block_other_runtimes():
+    settings = Settings(pi_executable="/missing/department-studio-pi")
+    assert settings.runtime_command("pi") is None
+    assert settings.runtime_command("claude") == shutil.which(settings.claude_executable)
+    assert settings.runtime_command("deepseek") == shutil.which(settings.deepseek_executable)
+
+
+def test_runtime_specific_settings_and_catalog_path(tmp_path):
+    catalog = tmp_path / "models.toml"
+    settings = Settings(
+        pi_executable="/bin/true",
+        claude_executable="/bin/false",
+        deepseek_executable="/bin/true",
+        deepseek_profile="review",
+        models_config=catalog,
+    )
+    assert settings.claude_executable == str(Path("/bin/false").resolve())
+    assert settings.deepseek_profile == "review"
+    assert settings.models_config == catalog.resolve()
+    with pytest.raises(ValueError, match="deepseek_profile"):
+        Settings(pi_executable="/bin/true", deepseek_profile="Bad Profile")
 
 
 def test_executable_resolves_from_path(tmp_path, monkeypatch):
@@ -76,3 +95,9 @@ def test_private_directory_and_exclusive_lock(tmp_path):
                 pytest.fail("Two services acquired the same directory")
     with DataDirectory(data):
         assert os.access(data, os.W_OK)
+
+
+def test_models_config_environment_fallback(tmp_path, monkeypatch):
+    path = tmp_path / "catalog.toml"
+    monkeypatch.setenv("DEPARTMENT_STUDIO_MODELS_CONFIG", str(path))
+    assert Settings(pi_executable="/bin/true").models_config == path.resolve()

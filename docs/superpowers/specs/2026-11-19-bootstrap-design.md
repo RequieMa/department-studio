@@ -3,6 +3,12 @@
 Date: 2026-11-19.
 Status: **approved**, with the user's addition that departments are named during initial setup. Runtime-neutral core, Pi RPC, local communication-first bootstrap and later A2A boundary are approved. Live model calls still require user-selected models and explicit live-test authorization.
 
+> **Later extension (2026-11-21).** The runtime and model sections below describe
+> the original Pi-first bootstrap. The implemented extension supports per-department
+> `pi`, `claude` and `deepseek` runtimes, a Studio-owned OpenAI-compatible model
+> catalog, a per-run Pi agent directory, and a shared MCP room bridge. See
+> `docs/runtime-abstraction.md` for the current contract. A2A remains deferred.
+
 ## 1. Outcome
 
 Build a small local application in which the user configures department leads, addresses them in one room, and watches real Pi-backed leads communicate. Once that loop is demonstrated, allow the user to enable development tools and direct those same leads to improve Department Studio.
@@ -40,7 +46,7 @@ First run starts with no departments. The user names each department and assigns
 
 Display names may contain spaces and Unicode. Handles are distinct routing aliases, normalized to lowercase, and must be unique; reserve `all`, `you` and `system`. Renaming a department or handle is allowed while it has no active or queued delivery. Keep its stable ID, conversation and delivery relationships; existing messages retain the sender label recorded when posted. Only future mentions use the updated handle.
 
-Reuse Pi's existing configured providers and credentials. The UI selects configured models; it does not display, copy or edit API keys. A model being listed does not prove its credentials or endpoint work: show runtime failures honestly. Do not silently substitute a different model.
+Superseded by the runtime/catalog extension: Studio owns a configurable OpenAI-compatible model catalog and translates a selection per runtime. The UI offers explicit runtime and model choices; it does not display, copy or edit API keys. A model being listed does not prove its credentials or endpoint work: show runtime failures honestly. Do not silently substitute a different model.
 
 Validate workspace existence and canonicalize the path. Do not clone repositories or create worktrees automatically. Separate worktrees are recommended before two development-enabled leads edit the same project; the user selects their paths through the UI.
 

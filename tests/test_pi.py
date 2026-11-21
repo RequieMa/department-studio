@@ -1,13 +1,14 @@
 import asyncio
 import hashlib
 import json
-from dataclasses import asdict, replace
+from dataclasses import replace
 
 import pytest
 
 from department_studio.backends.base import RunRequest
 from department_studio.backends.pi import PiBackend
 from department_studio.config import Settings
+from tests.catalog import TEST_CATALOG
 from tests.factories import create_lead
 from tests.fakes import until
 from tests.test_rpc import FAKE_PI
@@ -34,6 +35,7 @@ def backend_factory(tmp_path):
     def factory(mode="normal"):
         return PiBackend(
             Settings(pi_executable="/bin/true", data_dir=tmp_path, stop_timeout_seconds=0.6),
+            TEST_CATALOG,
             command_prefix=FAKE_PI,
             extra_env={"FAKE_PI_MODE": mode, "FAKE_PI_TRACE": str(tmp_path / "trace.jsonl")},
         )
@@ -65,6 +67,20 @@ async def test_explicit_session_model_workspace_and_restricted_launch_policy(
     assert args[args.index("--session-dir") + 1].endswith(request.lead.id)
     assert args[args.index("--model") + 1] == request.lead.model_id
     assert launch["cwd"] == request.lead.workspace
+    assert launch["agent_dir"].startswith(str(tmp_path / "sessions" / request.lead.id))
+    config = launch["models_config"]
+    assert set(config["providers"]) == {"test"}
+    provider = config["providers"]["test"]
+    assert provider["api"] == "openai-completions"
+    assert provider["baseUrl"] == "https://models.example.invalid/v1"
+    assert [model["id"] for model in provider["models"]] == [
+        "model-a",
+        "model-b",
+        "model-c",
+        "model-d",
+        "fixture",
+    ]
+    assert provider["models"][0]["contextWindow"] == 128000
     assert launch["bridge_token"] == request.bridge_token
     assert not launch["owner_present"]
     assert set(args[args.index("--tools") + 1].split(",")) == {
@@ -180,14 +196,15 @@ async def test_dialog_is_canceled_with_visible_diagnostic(
 async def test_model_metadata_never_prompts_or_exposes_provider_secrets(backend_factory, tmp_path):
     backend = backend_factory()
     models = await backend.list_models(tmp_path)
-    assert [asdict(model) for model in models] == [
-        {"provider": "test", "id": "model-a", "name": "Synthetic A"}
+    assert [model.id for model in models] == [
+        "model-a",
+        "model-b",
+        "model-c",
+        "model-d",
+        "fixture",
     ]
-    launch = records(tmp_path)[0]
-    assert "--no-tools" in launch["argv"] and "--no-session" in launch["argv"]
-    assert "-e" not in launch["argv"]
-    assert launch["bridge_token"] is None
-    assert not any(r.get("type") == "prompt" for r in records(tmp_path))
+    assert all(model.provider == "test" for model in models)
+    assert not records(tmp_path)
 
 
 async def test_missing_room_extension_fails_before_prompt(

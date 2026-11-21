@@ -96,9 +96,9 @@ pi --mode rpc --no-approve --no-extensions --no-mcp --no-skills
 
 The bridge case also supplied an explicit `-e` path to the copied extension. Both processes accepted `get_state`, `get_available_models`, `clear_queue` and `abort`, reported idle with zero pending messages, and exited with confirmation. The extension emitted `department-studio-bridge-ready-v1`, confirming registration from the copied path.
 
-**The installed runtime returned zero available models under this policy.** Follow-up live-demo preparation found that QGenie is already configured. Both inspected Pi settings files name `qgenie / azure::gpt-6-luna` as their saved default. Explicit probes against both agent directories still returned an empty list and a placeholder model; filtered native diagnostics identified `EROFS` while creating the `settings.json` lock. Both directories were confirmed to be mounted read-only in this coding session. The empty list therefore does not establish missing provider configuration or bad credentials. Recheck model discovery from the user's normal terminal with the intended `PI_CODING_AGENT_DIR`; see `live-demo.md`.
+**Historical provider-listing limitation.** During the original bootstrap, the installed Pi returned zero available models under the resource policy. Inspected Pi settings named an external provider/model as their saved default; explicit probes still returned an empty list and a placeholder model, and filtered native diagnostics identified `EROFS` while creating the `settings.json` lock. That finding did not establish missing provider configuration or bad credentials.
 
-No provider credentials were displayed or changed. Providers available only through auto-loaded Pi extensions remain excluded by the approved bootstrap resource policy; enabling unrelated extensions was not used to troubleshoot QGenie.
+The current build no longer reads Pi's provider catalog. Studio's own catalog supplies selectable models, and Pi receives a generated per-run agent directory. The historical external provider is not referenced by current source, tests or default configuration. See [runtime abstraction](runtime-abstraction.md) and the current verification summary below.
 
 No `prompt` command was sent to installed Pi. This handshake does not verify provider inference, live `agent_settled` events, real lead-to-lead model reasoning or development tool execution. Their transport/lifecycle handling is covered by deterministic fixtures and the installed Pi references.
 
@@ -151,8 +151,8 @@ and model loading with no mutating HTTP requests or browser errors. The rendered
 setup was inspected in git-ignored `artifacts/live-demo-setup.png`. The empty model
 list was traced to the read-only configuration failure described above. No prompt
 was sent. The temporary server was stopped so the user can launch from their normal
-terminal. The concrete QGenie setup and conversation sequence is in `live-demo.md`;
-all live-inference checks below remain pending.
+terminal. The concrete catalog/runtime setup and conversation sequence is in
+`live-demo.md`; all live-inference checks below remain pending.
 
 After the user chooses and configures real models and explicitly authorizes inference:
 
@@ -163,3 +163,21 @@ After the user chooses and configures real models and explicitly authorizes infe
 5. After independent review, save a Git baseline, select separate workspaces and explicitly enable Develop only for a narrow self-development request. Test and review changes before restarting the running application. Authentication, permission and cancellation changes require an explicit human request and review.
 
 No live collaboration, unrestricted application agents, self-development run, A2A implementation or deployment was started as part of this verification.
+
+
+## Current runtime/catalog/task reconciliation — November 21, 2026
+
+The combined branch passed:
+
+- 316 ordinary tests with temporary SQLite, synthetic backends and fixture Pi,
+  Claude Code and DeepSeek Harness subprocesses.
+- 17 Chromium browser tests against the owned synthetic server, including task
+  branches/decisions and the runtime/model dialog.
+- 6 Node bridge-extension tests, Ruff lint/format and JavaScript syntax checks.
+- Source-distribution to wheel build and installed-artifact checks, including the
+  packaged default catalog, runtime adapters, MCP bridge and task assets.
+
+No live model call, persistent data migration or service restart was performed.
+The Claude Code and DeepSeek Harness adapters therefore remain live-unverified; their
+observable boundaries and remaining acceptance checks are listed in
+[runtime abstraction](runtime-abstraction.md) and [live demo](live-demo.md).

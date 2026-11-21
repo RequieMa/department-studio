@@ -24,13 +24,30 @@ class BackendCapabilities:
     local_workspace: bool
     cancellation: bool
     persistent_conversation: bool
+    room_bridge: bool = True
+    context_maintenance: bool = True
 
 
 @dataclass(frozen=True)
 class ModelOption:
+    """A selectable model, sourced only from Department Studio's catalog."""
+
     provider: str
     id: str
     name: str
+    provider_name: str = ""
+    context_window: int | None = None
+    runtimes: tuple[str, ...] = ()
+    credential_env: str | None = None
+    credential_ready: bool = True
+
+
+@dataclass(frozen=True)
+class RuntimeInfo:
+    kind: str
+    name: str
+    available: bool
+    capabilities: BackendCapabilities
 
 
 @dataclass(frozen=True)
@@ -47,6 +64,7 @@ class RunRequest:
     prompt: str
     bridge_url: str
     bridge_token: str
+    native_session_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +81,7 @@ class ContextRequest:
 
     id: str
     lead: Lead
+    native_session_ref: str | None = None
 
 
 @dataclass(frozen=True)

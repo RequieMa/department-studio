@@ -1,3 +1,5 @@
+import { createTaskUI } from "./tasks.js";
+
 const $ = (selector) => document.querySelector(selector);
 const storageKey = "department-studio-owner";
 const fragment = new URLSearchParams(location.hash.slice(1));
@@ -16,6 +18,9 @@ let firstSnapshot = true;
 let editing = null;
 let saving = false;
 let modelOptions = new Map();
+let catalogModels = [];
+let catalogRuntimes = [];
+const runtimeLabels = { pi: "Pi", claude: "Claude Code", deepseek: "DeepSeek Harness" };
 let modelRequest = null;
 let folderRequest = null;
 let folderListing = null;
@@ -24,13 +29,6 @@ let enterHandledUntilKeyup = false;
 let mentionState = { context: null, options: [], active: 0 };
 let mentionDismissedKey = null;
 let deleting = false;
-let deliveryBaseline = false;
-let activities = [];
-let activityTimer = null;
-let activityOverflow = { count: 0, nonSuccess: 0 };
-const observedDeliveries = new Map();
-const activityNodes = new Map();
-const pageTitle = document.title;
 const rosterNodes = new Map();
 const messageNodes = new Map();
 const dialog = $("#lead-dialog");
@@ -77,7 +75,10 @@ async function request(path, { method = "GET", body, signal } = {}) {
   const data = await response.json();
   if (!response.ok) {
     const fields = data.errors?.map((item) => item.field.replace(/^body\./, "")).join(", ");
-    throw new Error((data.detail || "The request could not be completed.") + (fields ? ` Check: ${fields}.` : ""));
+    const error = new Error((data.detail || "The request could not be completed.") + (fields ? ` Check: ${fields}.` : ""));
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
   }
   return data;
 }
@@ -113,8 +114,9 @@ function renderRoster() {
     }
     text(card.querySelector(".lead-title"), lead.name);
     text(card.querySelector(".lead-handle"), `@${lead.handle}`);
-    text(card.querySelector(".model"), `${lead.provider} / ${lead.model_id}`);
-    card.querySelector(".model").title = `${lead.provider} / ${lead.model_id}`;
+    const modelLabel = `${runtimeLabels[lead.backend_kind] || lead.backend_kind} · ${lead.provider} / ${lead.model_id}`;
+    text(card.querySelector(".model"), modelLabel);
+    card.querySelector(".model").title = modelLabel;
     text(card.querySelector(".workspace"), lead.workspace);
     card.querySelector(".workspace").title = lead.workspace;
     const status = card.querySelector(".lead-status");
@@ -356,124 +358,6 @@ function renderMessages() {
   firstSnapshot = false;
 }
 
-function deliveryAttribution(delivery) {
-  const message = state.messages.find((item) => item.id === delivery.message_id);
-  const index = message?.recipient_ids?.indexOf(delivery.lead_id) ?? -1;
-  return message?.recipient_handles?.[index] || state.leads.find((lead) => lead.id === delivery.lead_id)?.handle || "department";
-}
-
-function deliveryKey(delivery) {
-  return `${delivery.id}:${delivery.generation ?? 0}`;
-}
-
-function activityDetails(delivery) {
-  const handle = deliveryAttribution(delivery);
-  if (delivery.state === "completed") return { tone: "success", text: `@${handle} finished this run` };
-  if (delivery.state === "stopping") return { tone: "stopping", text: `@${handle} is stopping this run` };
-  return { tone: "failure", text: `@${handle} ${delivery.state} this run` };
-}
-
-function isNonSuccess(activity) {
-  return activity.tone !== "success";
-}
-
-function renderRunActivities() {
-  const unread = activities.filter((item) => !item.read).length;
-  text($("#activity-count"), unread);
-  $("#activity-count").hidden = unread === 0;
-  text($("#activity-summary"), unread ? `${unread} unread update${unread === 1 ? "" : "s"}` : "No unread updates");
-  $("#activity-mark-read").disabled = unread === 0;
-  document.title = document.hidden && unread ? `(${unread}) ${pageTitle}` : pageTitle;
-  const overflow = $("#activity-overflow");
-  const overflowText = activityOverflow.count
-    ? `${activityOverflow.count} older update${activityOverflow.count === 1 ? "" : "s"} hidden by this page's activity limit${activityOverflow.nonSuccess ? ` (${activityOverflow.nonSuccess} non-success)` : ""}. See the original delivery history in the room.`
-    : "";
-  text(overflow, overflowText);
-  overflow.hidden = !overflowText;
-
-  const retained = new Set(activities.map((activity) => activity.key));
-  for (const [key, nodes] of activityNodes) {
-    if (!retained.has(key)) {
-      nodes.row.remove();
-      activityNodes.delete(key);
-    }
-  }
-  const list = $("#activity-list");
-  let position = list.firstElementChild;
-  for (const activity of activities) {
-    let nodes = activityNodes.get(activity.key);
-    if (!nodes) {
-      const row = element("li");
-      row.dataset.activity = activity.key;
-      const label = element("p");
-      const view = element("button", "", "View");
-      view.type = "button";
-      view.addEventListener("click", () => {
-        const current = activities.find((item) => item.key === activity.key);
-        const target = messageNodes.get(current?.messageId);
-        target?.scrollIntoView({ block: "center", behavior: "smooth" });
-        if (current) current.read = true;
-        renderRunActivities();
-      });
-      const dismiss = element("button", "", "Dismiss");
-      dismiss.type = "button";
-      dismiss.addEventListener("click", () => {
-        const index = activities.findIndex((item) => item.key === activity.key);
-        const next = activities[index + 1] || activities[index - 1];
-        activities = activities.filter((item) => item.key !== activity.key);
-        renderRunActivities();
-        (next ? activityNodes.get(next.key)?.dismiss : $("#activity-toggle")).focus();
-      });
-      row.append(label, view, dismiss);
-      nodes = { row, label, dismiss };
-      activityNodes.set(activity.key, nodes);
-    }
-    nodes.row.className = `activity-item ${activity.tone}`;
-    text(nodes.label, activity.text);
-    // Insert new rows in place; moving retained rows would blur focused buttons.
-    if (nodes.row !== position) list.insertBefore(nodes.row, position);
-    position = nodes.row.nextElementSibling;
-  }
-}
-
-function showActivityToast(activity) {
-  const toast = $("#activity-toast");
-  text(toast, activity.text);
-  toast.className = `activity-toast ${activity.tone}`;
-  toast.hidden = false;
-  clearTimeout(activityTimer);
-  activityTimer = setTimeout(() => { toast.hidden = true; }, 7000);
-}
-
-function observeDeliveries() {
-  if (!deliveryBaseline) {
-    state.deliveries.forEach((delivery) => observedDeliveries.set(deliveryKey(delivery), delivery.state));
-    deliveryBaseline = true;
-    return;
-  }
-  const updates = [];
-  for (const delivery of state.deliveries) {
-    const key = deliveryKey(delivery);
-    const previous = observedDeliveries.get(key);
-    observedDeliveries.set(key, delivery.state);
-    if (["completed", "failed", "interrupted", "canceled", "stopping"].includes(delivery.state) && previous !== delivery.state) {
-      updates.push({ key, messageId: delivery.message_id, read: false, ...activityDetails(delivery) });
-    }
-  }
-  if (!updates.length) return;
-  for (const update of updates) {
-    const existing = activities.find((activity) => activity.key === update.key);
-    if (existing) Object.assign(existing, update);
-    else activities.unshift(update);
-  }
-  const dropped = activities.splice(50);
-  activityOverflow.count += dropped.length;
-  activityOverflow.nonSuccess += dropped.filter(isNonSuccess).length;
-  renderRunActivities();
-  // Coalesce the toast only; retain updates up to the explicitly reported limit.
-  showActivityToast(updates.at(-1));
-}
-
 function renderActivity() {
   const activeIds = [...new Set(state.deliveries
     .filter((delivery) => delivery.state === "running")
@@ -537,11 +421,12 @@ async function refresh() {
       $("#access-notice").hidden = true;
       renderRoster();
       renderMessages();
-      observeDeliveries();
       renderControls();
       renderActivity();
       previewRecipients();
+      tasksUI.refresh(state, authenticated);
     } catch {
+      tasksUI.refresh(state, false);
       if (authenticated) text($("#connection"), "Reconnecting…");
     } finally { polling = null; }
   })();
@@ -761,6 +646,93 @@ function resetModels(message) {
   $("#lead-model").disabled = true;
 }
 
+function runtimeInfo(kind) {
+  return catalogRuntimes.find((item) => item.kind === kind);
+}
+
+function populateRuntimes() {
+  const selected = $("#lead-runtime").value || editing?.backend_kind || "pi";
+  const options = catalogRuntimes.length ? catalogRuntimes : [
+    { kind: "pi", name: "Pi", available: true },
+    { kind: "claude", name: "Claude Code", available: true },
+    { kind: "deepseek", name: "DeepSeek Harness", available: true },
+  ];
+  $("#lead-runtime").replaceChildren(...options.map((item) => {
+    const label = item.available ? item.name : `${item.name} (not installed)`;
+    const option = new Option(label, item.kind);
+    option.disabled = item.available === false;
+    return option;
+  }));
+  const fallback = options.find((item) => item.available !== false)?.kind || options[0].kind;
+  $("#lead-runtime").value = options.some((item) => item.kind === selected) ? selected : fallback;
+}
+
+function renderModels(saved = null) {
+  const runtime = $("#lead-runtime").value || "pi";
+  const current = modelOptions.get($("#lead-model").value);
+  const models = catalogModels.filter((model) => !model.runtimes?.length || model.runtimes.includes(runtime));
+  resetModels(models.length ? "Choose a model" : "No configured models for this runtime");
+  let savedMissing = false;
+  models.forEach((model, index) => {
+    const key = String(index);
+    modelOptions.set(key, model);
+    const credential = model.credential_ready === false && model.credential_env
+      ? ` · set ${model.credential_env}` : "";
+    $("#lead-model").append(new Option(`${model.name} · ${model.provider} / ${model.id}${credential}`, key));
+  });
+  const preferred = current || saved;
+  if (preferred?.provider && preferred?.id || preferred?.provider && preferred?.model_id) {
+    const provider = preferred.provider;
+    const modelId = preferred.model_id || preferred.id;
+    const index = models.findIndex((model) => model.provider === provider && model.id === modelId);
+    if (index >= 0) {
+      $("#lead-model").value = String(index);
+    } else if (preferred === saved) {
+      savedMissing = true;
+    }
+  }
+  $("#lead-model").disabled = models.length === 0;
+  const info = runtimeInfo(runtime);
+  const unavailable = info && info.available === false;
+  if (unavailable) {
+    text($("#model-help"), "This runtime executable is not installed on this machine. Choose an installed runtime before saving.");
+  } else if (savedMissing) {
+    text($("#model-help"), "The saved model is no longer in the configured catalog. Choose a configured model before saving or running.");
+  } else if (models.length) {
+    const selected = modelOptions.get($("#lead-model").value);
+    text($("#model-help"), selected?.credential_ready === false && selected?.credential_env
+      ? `Set ${selected.credential_env} in the environment that launches Department Studio before running this model. The browser never receives the key.`
+      : "Choose an exact configured model. No model has been selected for you, and listing does not verify a connection.");
+  } else {
+    text($("#model-help"), "Add an OpenAI-compatible provider and model to the configured catalog, then reload models.");
+  }
+}
+
+async function loadModels({ saved = null } = {}) {
+  modelRequest?.abort();
+  const controller = new AbortController();
+  modelRequest = controller;
+  $("#load-models").disabled = true;
+  notice("#form-error");
+  text($("#model-help"), "Reading the configured model catalog…");
+  try {
+    const data = await request("/api/models", { signal: controller.signal });
+    if (!dialog.open || controller.signal.aborted) return;
+    catalogModels = data.models || [];
+    catalogRuntimes = data.runtimes || [];
+    populateRuntimes();
+    renderModels(saved);
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      catalogModels = [];
+      catalogRuntimes = [];
+      resetModels("Catalog unavailable");
+      notice("#form-error", error.message);
+      text($("#model-help"), "The configured model catalog could not be loaded.");
+    }
+  } finally { if (modelRequest === controller) $("#load-models").disabled = false; }
+}
+
 function openDepartment(lead = null) {
   editing = lead;
   saving = false;
@@ -770,19 +742,13 @@ function openDepartment(lead = null) {
   for (const key of ["name", "handle", "role", "workspace"]) $(`#lead-${key}`).value = lead?.[key] || "";
   $("#lead-enabled").checked = lead?.enabled ?? true;
   document.querySelector(`input[name="permission"][value="${lead?.permission || "discuss"}"]`).checked = true;
-  resetModels("Choose a workspace, then load models");
-  if (lead) {
-    modelOptions.set("saved", { provider: lead.provider, id: lead.model_id });
-    $("#lead-model").append(new Option(`${lead.provider} / ${lead.model_id} (saved)`, "saved"));
-    $("#lead-model").disabled = false;
-    $("#lead-model").value = "saved";
-  }
-  text($("#model-help"), "Uses your existing Pi provider configuration. Listing a model does not verify its connection.");
-  $("#load-models").disabled = false;
+  $("#lead-runtime").value = lead?.backend_kind || "pi";
+  resetModels("Loading configured models…");
   $("#delete-department").hidden = !lead;
   notice("#form-error");
   updatePermission();
   dialog.showModal();
+  loadModels({ saved: lead });
 }
 
 function updatePermission() {
@@ -857,10 +823,6 @@ dialog.addEventListener("close", () => {
 });
 document.querySelectorAll('input[name="permission"]').forEach((input) => input.addEventListener("change", updatePermission));
 $("#develop-consent").addEventListener("change", updatePermission);
-$("#lead-workspace").addEventListener("input", () => {
-  modelRequest?.abort();
-  resetModels("Load models for this workspace");
-});
 
 function renderFolders() {
   if (!folderListing) return;
@@ -940,35 +902,23 @@ $("#select-folder").addEventListener("click", () => {
   folderDialog.close();
 });
 
-$("#load-models").addEventListener("click", async () => {
-  const workspace = $("#lead-workspace").value.trim();
-  if (!workspace) { notice("#form-error", "Choose a workspace directory first."); return; }
-  modelRequest?.abort();
-  const controller = new AbortController();
-  modelRequest = controller;
-  $("#load-models").disabled = true;
-  notice("#form-error");
-  text($("#model-help"), "Reading Pi’s configured models…");
-  try {
-    const data = await request(`/api/models?workspace=${encodeURIComponent(workspace)}`, { signal: controller.signal });
-    if (!dialog.open || controller.signal.aborted) return;
-    resetModels(data.models.length ? "Choose a model" : "No configured models available");
-    data.models.forEach((model, index) => {
-      const key = String(index);
-      modelOptions.set(key, model);
-      $("#lead-model").append(new Option(`${model.name} · ${model.provider} / ${model.id}`, key));
-    });
-    $("#lead-model").disabled = data.models.length === 0;
-    text($("#model-help"), data.models.length ? "Choose an exact provider and model. No model has been selected for you." : "Configure a provider in Pi, then load models again. No inference was requested.");
-  } catch (error) {
-    if (!controller.signal.aborted) { notice("#form-error", error.message); text($("#model-help"), "Model listing unavailable."); }
-  } finally { if (modelRequest === controller) $("#load-models").disabled = false; }
+$("#load-models").addEventListener("click", () => loadModels({
+  saved: modelOptions.get($("#lead-model").value) || editing,
+}));
+$("#lead-runtime").addEventListener("change", () => {
+  renderModels(editing);
+  updatePermission();
 });
 $("#lead-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if ($("#save-department").disabled) return;
   const model = modelOptions.get($("#lead-model").value);
   if (!model) { notice("#form-error", "Load models and choose one before saving."); return; }
+  const backendKind = $("#lead-runtime").value;
+  if (runtimeInfo(backendKind)?.available === false) {
+    notice("#form-error", "The selected runtime is not installed on this machine.");
+    return;
+  }
   const body = {
     name: $("#lead-name").value,
     handle: $("#lead-handle").value,
@@ -976,6 +926,7 @@ $("#lead-form").addEventListener("submit", async (event) => {
     workspace: $("#lead-workspace").value,
     provider: model.provider,
     model_id: model.id,
+    backend_kind: backendKind,
     permission: document.querySelector('input[name="permission"]:checked').value,
     enabled: $("#lead-enabled").checked,
   };
@@ -996,11 +947,17 @@ $("#activity-toggle").addEventListener("click", () => {
   panel.hidden = !panel.hidden;
   $("#activity-toggle").setAttribute("aria-expanded", String(!panel.hidden));
 });
-$("#activity-mark-read").addEventListener("click", () => {
-  activities.forEach((activity) => { activity.read = true; });
-  renderRunActivities();
+const tasksUI = createTaskUI({
+  request,
+  refreshRoom: refresh,
+  viewMessage(id) {
+    const article = messageNodes.get(id);
+    if (!article) return;
+    article.setAttribute("tabindex", "-1");
+    article.focus({ preventScroll: true });
+    article.scrollIntoView({ block: "center" });
+  },
 });
-document.addEventListener("visibilitychange", renderRunActivities);
 
 if (!authenticated) requireLaunch();
 else refresh();

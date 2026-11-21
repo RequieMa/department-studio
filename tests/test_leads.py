@@ -110,3 +110,12 @@ def test_two_leads_sharing_workspace_have_distinct_identity_and_session(store, t
     assert a.id != b.id
     assert a.conversation_id != b.conversation_id
     assert a.role != b.role
+
+
+def test_runtime_change_starts_a_fresh_native_conversation(store, tmp_path):
+    lead = create_lead(store, tmp_path)
+    changed = store.update_lead(lead.id, lead.revision, {"backend_kind": "claude"})
+    assert changed.backend_kind == "claude"
+    assert changed.conversation_id != lead.conversation_id
+    refs = {item["conversation_id"] for item in store.list_session_refs(lead.id)}
+    assert {lead.conversation_id, changed.conversation_id} <= refs
