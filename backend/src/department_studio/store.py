@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS receipts (
 );
 """
 
+_EDGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS department_edges (
+    lead_a TEXT NOT NULL REFERENCES leads(id),
+    lead_b TEXT NOT NULL REFERENCES leads(id),
+    PRIMARY KEY (lead_a, lead_b),
+    CHECK (lead_a < lead_b)
+);
+"""
+
 
 def _now():
     return datetime.now(UTC).isoformat()
@@ -112,6 +121,8 @@ class Store(TaskStore):
                 if self._schema_version() == 2:
                     self._migrate_v2()
                     self._migrate_v3()
+                if self._schema_version() == 3:
+                    self._migrate_v4()
             self._db.execute("PRAGMA journal_mode=WAL")
         except BaseException:
             self._db.close()
@@ -152,9 +163,25 @@ class Store(TaskStore):
                 self._db.execute(statement)
         self._db.execute("PRAGMA user_version=3")
 
+    def _migrate_v4(self):
+        # Department hierarchy is an undirected, complete-by-default edge graph.
+        for statement in _EDGE_SCHEMA.split(";"):
+            if statement.strip():
+                self._db.execute(statement)
+        if "active_recipient_ids" not in self._columns("room"):
+            self._db.execute(
+                "ALTER TABLE room ADD COLUMN active_recipient_ids TEXT NOT NULL DEFAULT '[]'"
+            )
+        self._db.execute(
+            "INSERT OR IGNORE INTO department_edges(lead_a,lead_b) "
+            "SELECT a.id,b.id FROM leads a JOIN leads b ON a.id < b.id "
+            "WHERE a.deleted_at IS NULL AND b.deleted_at IS NULL"
+        )
+        self._db.execute("PRAGMA user_version=4")
+
     def _schema_version(self) -> int:
         version = self._db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1, 2, 3}:
+        if version not in {0, 1, 2, 3, 4}:
             raise RuntimeError("Unsupported database schema version; use a compatible release.")
         return version
 
@@ -209,6 +236,7 @@ class Store(TaskStore):
                     "INSERT INTO sessions(conversation_id,lead_id,created_at) VALUES(?,?,?)",
                     (conversation_id, lead_id, _now()),
                 )
+                self._link_lead_edges(lead_id)
         except sqlite3.IntegrityError as exc:
             raise Conflict("That handle is already in use.") from exc
         return self.get_lead(lead_id)
@@ -278,6 +306,12 @@ class Store(TaskStore):
                 "UPDATE leads SET deleted_at=?,revision=revision+1 WHERE id=?",
                 (deleted_at, lead_id),
             )
+            self._db.execute(
+                "DELETE FROM department_edges WHERE lead_a=? OR lead_b=?",
+                (lead_id, lead_id),
+            )
+            active = [item for item in self._stored_active_ids() if item != lead_id]
+            self._write_active_ids(active)
             return LeadDeletion(lead_id, lead.revision + 1, deleted_at)
 
     def update_lead(self, lead_id: str, revision: int, changes: dict) -> Lead:
@@ -465,6 +499,95 @@ class Store(TaskStore):
             self._db.execute("UPDATE room SET paused=?,preparation_id=NULL WHERE id=1", (failed,))
             return not failed
 
+    @staticmethod
+    def _edge_pair(lead_a: str, lead_b: str) -> tuple[str, str]:
+        if not isinstance(lead_a, str) or not isinstance(lead_b, str):
+            raise Invalid("Hierarchy endpoints must be department IDs.")
+        if lead_a == lead_b:
+            raise Invalid("A department cannot link to itself.")
+        return (lead_a, lead_b) if lead_a < lead_b else (lead_b, lead_a)
+
+    def _link_lead_edges(self, lead_id: str):
+        rows = self._db.execute(
+            "SELECT id FROM leads WHERE deleted_at IS NULL AND id!=?", (lead_id,)
+        ).fetchall()
+        for row in rows:
+            lead_a, lead_b = self._edge_pair(lead_id, row["id"])
+            self._db.execute(
+                "INSERT OR IGNORE INTO department_edges(lead_a,lead_b) VALUES(?,?)",
+                (lead_a, lead_b),
+            )
+
+    def can_address(self, sender_id: str, recipient_id: str) -> bool:
+        if sender_id == recipient_id:
+            return False
+        lead_a, lead_b = self._edge_pair(sender_id, recipient_id)
+        with self._lock:
+            return (
+                self._db.execute(
+                    "SELECT 1 FROM department_edges WHERE lead_a=? AND lead_b=?",
+                    (lead_a, lead_b),
+                ).fetchone()
+                is not None
+            )
+
+    def hierarchy(self) -> dict:
+        with self._lock:
+            leads = self.list_leads()
+            ids = {lead.id for lead in leads}
+            rows = self._db.execute(
+                "SELECT lead_a,lead_b FROM department_edges ORDER BY lead_a,lead_b"
+            ).fetchall()
+            edges = [
+                {"a": row["lead_a"], "b": row["lead_b"]}
+                for row in rows
+                if row["lead_a"] in ids and row["lead_b"] in ids
+            ]
+            return {
+                "nodes": [
+                    {
+                        "id": lead.id,
+                        "name": lead.name,
+                        "handle": lead.handle,
+                        "enabled": lead.enabled,
+                    }
+                    for lead in leads
+                ],
+                "edges": edges,
+            }
+
+    def set_hierarchy_edge(self, lead_a: str, lead_b: str, connected: bool) -> dict:
+        if type(connected) is not bool:
+            raise Invalid("connected must be a boolean.")
+        first, second = self._edge_pair(lead_a, lead_b)
+        with self._transaction():
+            self.get_lead(first)
+            self.get_lead(second)
+            if connected:
+                self._db.execute(
+                    "INSERT OR IGNORE INTO department_edges(lead_a,lead_b) VALUES(?,?)",
+                    (first, second),
+                )
+            else:
+                self._db.execute(
+                    "DELETE FROM department_edges WHERE lead_a=? AND lead_b=?",
+                    (first, second),
+                )
+        return self.hierarchy()
+
+    def connect_all_departments(self) -> dict:
+        with self._transaction():
+            rows = self._db.execute(
+                "SELECT id FROM leads WHERE deleted_at IS NULL ORDER BY id"
+            ).fetchall()
+            for index, row in enumerate(rows):
+                for other in rows[index + 1 :]:
+                    self._db.execute(
+                        "INSERT OR IGNORE INTO department_edges(lead_a,lead_b) VALUES(?,?)",
+                        (row["id"], other["id"]),
+                    )
+        return self.hierarchy()
+
     def _resolve_handles(self, handles: list[str], *, human: bool) -> list[str]:
         leads = self.list_leads()
         by_handle = {lead.handle: lead for lead in leads}
@@ -563,16 +686,54 @@ class Store(TaskStore):
             self._link_task_delivery((task_ids or {}).get(lead.id), delivery_id, task_snapshot)
         return Receipt(message_id, recipients)
 
-    def post_human_message(self, text: str) -> Receipt:
+    def _stored_active_ids(self) -> list[str]:
+        row = self._db.execute("SELECT active_recipient_ids FROM room WHERE id=1").fetchone()
+        try:
+            value = json.loads(row[0]) if row else []
+        except (TypeError, ValueError):
+            return []
+        return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+    def _write_active_ids(self, ids: list[str]):
+        self._db.execute(
+            "UPDATE room SET active_recipient_ids=? WHERE id=1",
+            (json.dumps(list(dict.fromkeys(ids))),),
+        )
+
+    def active_recipient_ids(self) -> list[str]:
+        with self._lock:
+            leads = {lead.id: lead for lead in self.list_leads() if lead.enabled}
+            return [lead_id for lead_id in self._stored_active_ids() if lead_id in leads]
+
+    def post_human_message(self, text: str, *, public_note: bool = False) -> Receipt:
+        if type(public_note) is not bool:
+            raise Invalid("public_note must be a boolean.")
         text = message_text(text)
         with self._transaction():
-            recipients = self.resolve_mentions(text)
+            mentioned = _MENTIONS.findall(text)
+            notice = None
+            if mentioned:
+                recipients = self.resolve_mentions(text)
+                self._write_active_ids(recipients)
+            elif public_note:
+                recipients = []
+            else:
+                stored = self._stored_active_ids()
+                available = {lead.id for lead in self.list_leads() if lead.enabled}
+                recipients = [lead_id for lead_id in stored if lead_id in available]
+                if stored and not recipients:
+                    notice = "Previous addressees are unavailable; this is a public note."
+                elif len(recipients) != len(stored):
+                    notice = (
+                        "Some previous addressees are unavailable; only available "
+                        "departments are addressed."
+                    )
             chain_id = str(uuid4())
             self._db.execute(
                 "INSERT INTO chains(id,allowance) VALUES(?,?)",
                 (chain_id, self.max_chain_deliveries),
             )
-            message_id = self._insert_message(None, text, recipients, chain_id)
+            message_id = self._insert_message(None, text, recipients, chain_id, notice)
             self._db.execute(
                 "UPDATE chains SET root_message_id=? WHERE id=?", (message_id, chain_id)
             )
@@ -620,6 +781,12 @@ class Store(TaskStore):
             delivery = self.get_delivery(delivery_id)
             sender = self.get_lead(delivery.lead_id)
             selected = [i for i in self._resolve_handles(handles, human=False) if i != sender.id]
+            denied = [lead_id for lead_id in selected if not self.can_address(sender.id, lead_id)]
+            if denied:
+                handle = self.get_lead(denied[0]).handle
+                raise Conflict(
+                    f"This department cannot address @{handle} under the current hierarchy."
+                )
             task_context = self.task_context_for_delivery(delivery_id)
             task_id = task_context["id"] if task_context else None
             message_id = self._insert_message(
@@ -890,6 +1057,7 @@ class Store(TaskStore):
                 "paused": self.paused,
                 "preparing": self.preparing,
                 "context_checks": [asdict(x) for x in self.list_context_checks()],
+                "active_recipient_ids": self.active_recipient_ids(),
                 "leads": [asdict(x) for x in self.list_leads()],
                 "messages": [asdict(x) for x in self.list_messages()],
                 "deliveries": [asdict(x) for x in self.list_deliveries()],

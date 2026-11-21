@@ -7,28 +7,65 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        length = int(self.headers.get("Content-Length", "0"))
-        body = json.loads(self.rfile.read(length))
-        self.server.records.append(
-            {"path": self.path, "authorization": self.headers.get("Authorization"), "body": body}
+    def _json(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        self.server.requests.append(
+            {"method": "GET", "path": self.path, "authorization": self.headers.get("Authorization")}
         )
         if self.server.fail:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(b"secret upstream body")
             return
-        receipt = {
-            "message_id": "message-1",
-            "recipient_ids": ["lead-2"],
-            "notice": None,
-        }
-        payload = json.dumps(receipt).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        if self.path == "/api/bridge/records":
+            self._json(200, {"records": self.server.records})
+        elif self.path.startswith("/api/bridge/records/"):
+            name = self.path.rsplit("/", 1)[-1]
+            self._json(
+                200,
+                {
+                    "name": name,
+                    "path": f"/project/records/{name}",
+                    "content": "# Note\n\nDurable evidence.",
+                    "size": 26,
+                },
+            )
+        else:
+            self._json(404, {"detail": "missing"})
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(length))
+        self.server.requests.append(
+            {
+                "method": "POST",
+                "path": self.path,
+                "authorization": self.headers.get("Authorization"),
+                "body": body,
+            }
+        )
+        if self.server.fail:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(b"secret upstream body")
+            return
+        if self.path == "/api/bridge/records":
+            self._json(
+                200,
+                {"name": body["name"], "path": f"/project/records/{body['name']}", "size": 42},
+            )
+            return
+        self._json(
+            200,
+            {"message_id": "message-1", "recipient_ids": ["lead-2"], "notice": None},
+        )
 
     def log_message(self, *_):
         pass
@@ -36,13 +73,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def server(*, fail=False):
     instance = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    instance.records = []
+    instance.requests = []
+    instance.records = [{"name": "2026-11-21-audit.md", "size": 120, "modified": "now"}]
     instance.fail = fail
     threading.Thread(target=instance.serve_forever, daemon=True).start()
     return instance
 
 
-def bridge(port, *, token="runtime-token", fail=False):
+def bridge(port, *, token="runtime-token"):
     url = f"http://127.0.0.1:{port}/api/bridge/messages"
     env = {
         key: value for key, value in os.environ.items() if not key.startswith("DEPARTMENT_STUDIO_")
@@ -70,7 +108,7 @@ def send(process, message):
     return json.loads(process.stdout.readline())
 
 
-def test_mcp_handshake_lists_and_calls_the_room_tool():
+def test_mcp_handshake_lists_and_calls_room_message_tool():
     http = server()
     process = bridge(http.server_address[1])
     try:
@@ -90,7 +128,8 @@ def test_mcp_handshake_lists_and_calls_the_room_tool():
         )
         process.stdin.flush()
         tools = send(process, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert tools["result"]["tools"][0]["name"] == "send_room_message"
+        names = {tool["name"] for tool in tools["result"]["tools"]}
+        assert names == {"send_room_message", "list_records", "read_record", "write_record"}
         call = send(
             process,
             {
@@ -105,17 +144,70 @@ def test_mcp_handshake_lists_and_calls_the_room_tool():
         )
         assert call["result"]["isError"] is False
         assert "Message stored." in call["result"]["content"][0]["text"]
-        assert http.records == [
+        message = next(item for item in http.requests if item["path"] == "/api/bridge/messages")
+        assert message["authorization"] == "Bearer runtime-token"
+        assert message["body"] == {
+            "call_id": "mcp-3",
+            "text": "Public note",
+            "recipients": ["canvas"],
+        }
+    finally:
+        process.stdin.close()
+        assert process.wait(timeout=5) == 0
+        http.shutdown()
+
+
+def test_mcp_records_tools_list_read_and_write():
+    http = server()
+    process = bridge(http.server_address[1])
+    try:
+        listed = send(
+            process,
             {
-                "path": "/api/bridge/messages",
-                "authorization": "Bearer runtime-token",
-                "body": {
-                    "call_id": "mcp-3",
-                    "text": "Public note",
-                    "recipients": ["canvas"],
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {"name": "list_records", "arguments": {}},
+            },
+        )
+        assert "2026-11-21-audit.md" in listed["result"]["content"][0]["text"]
+        read = send(
+            process,
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {"name": "read_record", "arguments": {"name": "2026-11-21-audit.md"}},
+            },
+        )
+        assert "Durable evidence." in read["result"]["content"][0]["text"]
+        written = send(
+            process,
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": "write_record",
+                    "arguments": {
+                        "name": "2026-11-21-audit.md",
+                        "content": "More evidence",
+                        "mode": "append",
+                    },
                 },
-            }
-        ]
+            },
+        )
+        assert written["result"]["isError"] is False
+        post = next(
+            item
+            for item in http.requests
+            if item["method"] == "POST" and item["path"] == "/api/bridge/records"
+        )
+        assert post["body"] == {
+            "name": "2026-11-21-audit.md",
+            "content": "More evidence",
+            "mode": "append",
+        }
     finally:
         process.stdin.close()
         assert process.wait(timeout=5) == 0
@@ -158,7 +250,7 @@ def test_invalid_arguments_are_rejected_locally():
             },
         )
         assert response["result"]["isError"] is True
-        assert not http.records
+        assert not http.requests
     finally:
         process.stdin.close()
         assert process.wait(timeout=5) == 0

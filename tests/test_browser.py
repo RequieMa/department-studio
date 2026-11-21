@@ -122,6 +122,9 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
     before = len(snapshot()["deliveries"])
     literal = '<img src=x onerror="window.roomXss=true"> public note'
     composer.fill(literal)
+    expect(page.locator("#recipient-preview")).to_contain_text("Continuing with @forge")
+    page.locator("#public-note").check()
+    expect(page.locator("#recipient-preview")).to_contain_text("Public note")
     page.get_by_role("button", name="Send message", exact=True).click()
     expect(page.get_by_text(literal, exact=True)).to_be_visible()
     assert page.evaluate("window.roomXss") is None
@@ -417,6 +420,7 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
                 "workspace": "/workspace",
                 "enabled": False,
                 "permission": "discuss",
+                "backend_kind": "pi",
                 "status": "idle",
             },
             {
@@ -429,6 +433,7 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
                 "enabled": True,
                 "deleted": True,
                 "permission": "discuss",
+                "backend_kind": "pi",
                 "status": "idle",
             },
         ],
@@ -622,6 +627,7 @@ def test_composer_enter_sends_shift_enter_adds_newlines_and_keeps_drafts(browser
                 "workspace": "/workspace",
                 "enabled": True,
                 "permission": "discuss",
+                "backend_kind": "pi",
                 "status": "idle",
             }
         ],
@@ -649,7 +655,10 @@ def test_composer_enter_sends_shift_enter_adds_newlines_and_keeps_drafts(browser
     page.goto(ORIGIN + "/#token=" + TOKEN)
     composer = page.get_by_label("Message to the room", exact=True)
     expect(
-        page.get_by_text("Enter to send · Shift+Enter for a new line", exact=True)
+        page.get_by_text(
+            "Keep it brief · durable notes go in Records · Enter sends · Shift+Enter adds a line",
+            exact=True,
+        )
     ).to_be_visible()
 
     composer.fill("plain Enter")

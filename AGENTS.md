@@ -20,6 +20,10 @@ This is a user requirement, not an optional preference.
 - Start with no built-in departments. The user names departments and chooses their handles, roles, models and workspaces during initial setup. Backend/Frontend/QA are examples only; do not hard-code names or map behavior from names.
 - Department IDs must be independent of display names and handles. Renaming must preserve sessions and relationships; historical messages retain their original sender labels.
 - The shared chat is the primary interaction surface. Support addressing departments and, as task execution is introduced, human takeover.
+- Keep chat messages brief. Durable decisions, evidence and audit trails belong in the project's Markdown records folder; reference exact file paths instead of pasting documents into the chat.
+- Project rooms are isolated: each project owns its database, departments, records, tasks and native sessions. Switching or deleting a project must never delete the configured workspace.
+- Department hierarchy is a per-project, mutually directed permission graph enforced for agent-to-agent room messages; the human is not restricted by it.
+- Dark/light theme is a local browser preference, not room or project data.
 - Department leads can collaborate and delegate within authorized scope. An agent's message is not automatically permission for arbitrary execution or broader access.
 - A configured workspace path identifies where work happens; it is not an OS security sandbox.
 

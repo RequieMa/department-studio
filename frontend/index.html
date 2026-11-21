@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Department Studio</title>
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
@@ -14,8 +15,13 @@
       <div class="brand"><span class="studio-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <div><h1>Department Studio</h1><p>A shared room, led by you.</p></div>
       </div>
-      <div class="presence"><span class="connection-dot" aria-hidden="true"></span>
+      <div class="presence">
+        <button id="projects-toggle" class="project-switcher" type="button" aria-haspopup="dialog" aria-controls="projects-dialog">
+          <span>Project</span><strong id="active-project-name">Loading…</strong>
+        </button>
+        <span class="connection-dot" aria-hidden="true"></span>
         <span id="connection" role="status">Connecting…</span><span class="owner-label">You · project lead</span>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Switch to dark mode">Dark</button>
       </div>
     </header>
 
@@ -36,6 +42,7 @@
         </div>
         <div id="roster" class="roster"></div>
         <button id="add-department" class="add-department" type="button" disabled><span aria-hidden="true">+</span> Add department</button>
+        <button id="hierarchy-toggle" class="hierarchy-button" type="button" disabled>Department hierarchy</button>
         <div class="roster-footer"><span class="eyebrow">Start with a conversation</span>
           <p>Each department has its own conversation. Only addressed requests start work.</p>
         </div>
@@ -46,6 +53,7 @@
           <div class="room-title-group"><span class="eyebrow">Shared conversation</span><h2 id="room-title">Project room</h2><p>Messages, requests and replies in one place.</p></div>
           <div class="room-heading-meta">
             <div id="recipient-context" class="recipient-context" aria-live="polite"><span>To</span><strong id="room-recipient">the room</strong></div>
+            <button id="records-toggle" class="activity-toggle" type="button" aria-haspopup="dialog" aria-controls="records-dialog">Records <span id="records-count" class="count">0</span></button>
             <button id="tasks-toggle" class="activity-toggle" type="button" aria-expanded="false" aria-controls="tasks-panel">Ongoing tasks <span id="tasks-count" class="count">0</span></button>
             <button id="activity-toggle" class="activity-toggle" type="button" aria-expanded="false" aria-controls="activity-panel">Activity <span id="activity-count" class="activity-count" hidden>0</span></button>
             <span id="room-state" class="state-pill">Room paused</span>
@@ -90,8 +98,9 @@
             </div>
           </div>
           <div id="recipient-preview" class="recipient-preview" aria-live="polite">Public note · no department will be notified</div>
+          <label id="public-note-wrap" class="public-note-toggle" hidden><input id="public-note" type="checkbox"><span>Don’t continue the previous addressees <small>Applies only when this message has no @mention.</small></span></label>
           <div id="composer-error" class="inline-error" role="alert" hidden></div>
-          <div class="composer-actions"><span>Enter to send · Shift+Enter for a new line</span>
+          <div class="composer-actions"><span>Keep it brief · durable notes go in Records · Enter sends · Shift+Enter adds a line</span>
             <button id="send" class="primary" type="submit" disabled>Send message</button>
           </div>
         </form>
@@ -212,6 +221,75 @@
     <div id="delete-error" class="inline-error" role="alert" hidden></div>
     <div class="dialog-actions"><button id="cancel-delete" class="secondary" type="button">Cancel</button>
       <button id="confirm-delete" class="danger" type="button" disabled>Delete department</button>
+    </div>
+  </dialog>
+
+  <dialog id="records-dialog" aria-labelledby="records-title">
+    <div class="dialog-heading"><div><span class="eyebrow">Audit trail</span><h2 id="records-title">Project records</h2></div>
+      <button id="close-records" type="button" class="icon-button" aria-label="Close project records">×</button>
+    </div>
+    <p class="dialog-intro">Durable Markdown notes shared by you and every department. Keep room messages short; reference a record by its exact path when you want a department to read it.</p>
+    <p id="records-path" class="records-path"></p>
+    <div id="records-error" class="inline-error" role="alert" hidden></div>
+    <div class="records-layout">
+      <div class="records-index">
+        <p class="eyebrow">Records</p>
+        <ul id="records-list" class="records-list" aria-label="Project records"></ul>
+        <p id="records-empty" class="field-help" hidden>No records yet. Create one below.</p>
+      </div>
+      <article class="records-viewer" aria-live="polite">
+        <h3 id="records-viewer-title">Choose a record</h3>
+        <pre id="records-content" class="records-content">Select a record to read it here.</pre>
+      </article>
+    </div>
+    <form id="new-record-form" class="new-record-form">
+      <div class="form-grid">
+        <label for="new-record-name">New record filename<input id="new-record-name" maxlength="128" required placeholder="2026-11-21-topic.md"></label>
+        <label for="new-record-content">Content<textarea id="new-record-content" rows="4" required maxlength="524288" placeholder="# Decision
+
+Evidence, links and durable context."></textarea></label>
+      </div>
+      <div class="dialog-actions">
+        <button id="close-records-action" class="secondary" type="button">Close</button>
+        <button id="create-record" class="primary" type="submit">Save record</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="projects-dialog" aria-labelledby="projects-title">
+    <div class="dialog-heading"><div><span class="eyebrow">Rooms</span><h2 id="projects-title">Project history</h2></div>
+      <button id="close-projects" type="button" class="icon-button" aria-label="Close project history">×</button>
+    </div>
+    <p class="dialog-intro">Switch rooms or start a new project. Each project keeps its own departments, room history, tasks and native sessions.</p>
+    <div id="projects-error" class="inline-error" role="alert" hidden></div>
+    <ul id="projects-list" class="projects-list" aria-label="Projects"></ul>
+    <p id="projects-empty" class="field-help" hidden>No projects are available.</p>
+    <form id="new-project-form" class="new-project-form">
+      <label for="new-project-name">New project name</label>
+      <div class="new-project-row">
+        <input id="new-project-name" maxlength="80" autocomplete="off" required placeholder="e.g. Release planning">
+        <button id="create-project" class="primary compact" type="submit">Create project</button>
+      </div>
+      <p class="field-help">Creating a project switches to a fresh, paused room. Your current project and its history stay available here.</p>
+    </form>
+    <div id="projects-receipt" class="task-receipt" role="status"></div>
+    <div class="dialog-actions"><button id="close-projects-action" class="secondary" type="button">Close</button></div>
+  </dialog>
+
+  <dialog id="hierarchy-dialog" aria-labelledby="hierarchy-title">
+    <div class="dialog-heading"><div><span class="eyebrow">Departments</span><h2 id="hierarchy-title">Department hierarchy</h2></div>
+      <button id="close-hierarchy" type="button" class="icon-button" aria-label="Close department hierarchy">×</button>
+    </div>
+    <p class="dialog-intro">Links are mutual and allow a department to address another through the room tool. Click a line to disconnect it; click two departments to connect them.</p>
+    <div id="hierarchy-error" class="inline-error" role="alert" hidden></div>
+    <p id="hierarchy-empty" class="field-help" hidden>Add at least two departments to configure links.</p>
+    <div class="hierarchy-canvas-wrap">
+      <svg id="hierarchy-graph" class="hierarchy-graph" viewBox="0 0 640 420" role="img" aria-label="Department hierarchy graph"></svg>
+    </div>
+    <p id="hierarchy-status" class="field-help" role="status"></p>
+    <div class="dialog-actions">
+      <button id="hierarchy-connect-all" class="secondary" type="button">Connect all</button>
+      <button id="hierarchy-close-action" class="primary" type="button">Done</button>
     </div>
   </dialog>
 

@@ -122,7 +122,15 @@ class ClaudeBackend:
     ) -> list[str]:
         lead = request.lead
         tools = self._tools(lead.permission)
-        allowed = ",".join((*tools, ROOM_TOOL_MCP))
+        allowed = ",".join(
+            (
+                *tools,
+                ROOM_TOOL_MCP,
+                "mcp__room__list_records",
+                "mcp__room__read_record",
+                "mcp__room__write_record",
+            )
+        )
         arguments = [
             "-p",
             "--output-format",
@@ -140,6 +148,8 @@ class ClaudeBackend:
             "--mcp-config",
             str(mcp_config),
             "--disable-slash-commands",
+            "--add-dir",
+            str(self.settings.data_dir / "records"),
             "--append-system-prompt",
             instructions,
         ]
@@ -242,7 +252,15 @@ class ClaudeBackend:
             lead = request.lead
             selection = self.catalog.require(lead.provider, lead.model_id, "claude")
             selection.require_api_key()
-            instructions = agent_instructions(lead, runtime="Claude Code", room_tool=ROOM_TOOL_MCP)
+            records_dir = self.settings.data_dir / "records"
+            records_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            records_dir.chmod(0o700)
+            instructions = agent_instructions(
+                lead,
+                runtime="Claude Code",
+                room_tool=ROOM_TOOL_MCP,
+                records_path=records_dir,
+            )
             session_dir = self.settings.data_dir / "sessions" / lead.id / "claude"
             session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             session_dir.chmod(0o700)

@@ -28,6 +28,7 @@ def test_cli_defaults_and_explicit_local_options():
 def test_extension_is_packaged_independently_of_working_directory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert files("department_studio").joinpath("pi_extension.ts").is_file()
+    assert files("department_studio").joinpath("default_models.toml").is_file()
 
 
 @pytest.fixture(scope="module")
@@ -86,12 +87,18 @@ import hashlib, json, sys
 from importlib.metadata import distribution
 from pathlib import Path
 from department_studio import api, domain, store, task_api, tasks
+from department_studio import projects, records, hierarchy_api, project_api, records_api
 package = Path(api.__file__).resolve().parent
 installed = distribution('department-studio')
 assert package == Path(installed.locate_file('department_studio')).resolve()
 assert json.loads(installed.read_text('direct_url.json'))['url'] == Path(sys.argv[1]).as_uri()
-paths = [Path(module.__file__).resolve() for module in (api, domain, store, task_api, tasks)]
-paths += [package / 'static' / name for name in ('index.html', 'app.js', 'tasks.js', 'style.css')]
+paths = [Path(module.__file__).resolve() for module in (
+    api, domain, store, task_api, tasks, projects, records,
+    hierarchy_api, project_api, records_api,
+)]
+paths += [package / 'static' / name for name in (
+    'index.html', 'app.js', 'tasks.js', 'style.css', 'theme.js',
+)]
 assert all(path.is_relative_to(package) for path in paths)
 assert 'site-packages' in package.parts
 print(json.dumps({str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -114,10 +121,16 @@ print(json.dumps({str(path.relative_to(package)): hashlib.sha256(path.read_bytes
                 "store.py",
                 "task_api.py",
                 "tasks.py",
+                "projects.py",
+                "project_api.py",
+                "records.py",
+                "records_api.py",
+                "hierarchy_api.py",
                 "static/index.html",
                 "static/app.js",
                 "static/tasks.js",
                 "static/style.css",
+                "static/theme.js",
             )
         }
 
@@ -129,6 +142,7 @@ def test_built_wheel_contains_ui_bridge_and_a_working_cli(built_wheel, tmp_path)
             "department_studio/static/app.js",
             "department_studio/static/tasks.js",
             "department_studio/static/style.css",
+            "department_studio/static/theme.js",
             "department_studio/pi_extension.ts",
             "department_studio/default_models.toml",
             "department_studio/models.py",
@@ -138,6 +152,11 @@ def test_built_wheel_contains_ui_bridge_and_a_working_cli(built_wheel, tmp_path)
             "department_studio/backends/deepseek.py",
             "department_studio/backends/process.py",
             "department_studio/backends/registry.py",
+            "department_studio/projects.py",
+            "department_studio/project_api.py",
+            "department_studio/records.py",
+            "department_studio/records_api.py",
+            "department_studio/hierarchy_api.py",
         } <= set(archive.namelist())
     help_result = subprocess.run(
         [*wheel_command(built_wheel), "--help"],
@@ -184,6 +203,7 @@ async def test_wheel_cli_serves_authenticated_room_outside_repository(built_whee
                     "paused": True,
                     "preparing": False,
                     "context_checks": [],
+                    "active_recipient_ids": [],
                     "leads": [],
                     "messages": [],
                     "deliveries": [],

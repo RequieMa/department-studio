@@ -201,8 +201,14 @@ class DeepSeekBackend:
             lead = request.lead
             selection = self.catalog.require(lead.provider, lead.model_id, "deepseek")
             selection.require_api_key()
+            records_dir = self.settings.data_dir / "records"
+            records_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            records_dir.chmod(0o700)
             instructions = agent_instructions(
-                lead, runtime="DeepSeek Harness", room_tool=ROOM_TOOL_MCP
+                lead,
+                runtime="DeepSeek Harness",
+                room_tool=ROOM_TOOL_MCP,
+                records_path=records_dir,
             )
             session_dir = self.settings.data_dir / "sessions" / lead.id / "deepseek"
             session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)

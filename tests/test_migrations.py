@@ -135,7 +135,7 @@ def test_migration_retains_every_existing_field_and_is_repeatable(tmp_path, vers
         assert store.list_action_requests()["action_requests"] == []
         assert store.task_context_for_delivery("delivery") is None
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         for table, (columns_before, rows) in before.items():
             assert (
@@ -150,19 +150,25 @@ def test_migration_retains_every_existing_field_and_is_repeatable(tmp_path, vers
     assert table_snapshot(path) == migrated
 
 
-def test_new_database_has_version_three_context_and_tasks(tmp_path):
+def test_new_database_has_version_four_context_tasks_and_hierarchy(tmp_path):
     path = tmp_path / "new.sqlite"
     with Store(path):
         pass
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
         lead_columns = {r[1]: r for r in db.execute("PRAGMA table_info(leads)")}
         assert lead_columns["deleted_at"][2:4] == ("TEXT", 0)
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
-    assert {"context_checks", "tasks", "task_deliveries", "action_requests"} <= tables(path)
+    assert {
+        "context_checks",
+        "tasks",
+        "task_deliveries",
+        "action_requests",
+        "department_edges",
+    } <= tables(path)
 
 
-@pytest.mark.parametrize("version", [4, 999, -1])
+@pytest.mark.parametrize("version", [5, 999, -1])
 def test_unknown_version_rejected_before_schema_or_journal_writes(tmp_path, version):
     path = tmp_path / "future.sqlite"
     with sqlite3.connect(path) as db:
@@ -196,7 +202,7 @@ def test_migration_failure_rolls_back_whole_upgrade_and_closes_connection(
 
     class FaultyConnection(sqlite3.Connection):
         def execute(self, sql, *args, **kwargs):
-            if sql.strip().upper() == "PRAGMA USER_VERSION=3":
+            if sql.strip().upper() == "PRAGMA USER_VERSION=4":
                 raise sqlite3.OperationalError("synthetic version write failure")
             return super().execute(sql, *args, **kwargs)
 
@@ -215,23 +221,34 @@ def test_migration_failure_rolls_back_whole_upgrade_and_closes_connection(
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         assert "context_checks" not in tables(path)
         assert "tasks" not in tables(path)
+        assert "department_edges" not in tables(path)
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         connections[0].execute("SELECT 1")
     with Store(path):
         pass
 
 
-def test_v2_context_migrates_to_v3_without_touching_history(tmp_path):
+def test_v2_context_migrates_to_v4_without_touching_history(tmp_path):
     path = apply_context_v2(version_one_database(tmp_path / "v2.sqlite", tmp_path))
     before = table_snapshot(path)
     with Store(path) as store:
         assert store.list_tasks()["tasks"] == []
         assert store.get_lead("lead", include_deleted=True).deleted_at == "historical tombstone"
-    assert table_snapshot(path) == before
+    after = table_snapshot(path)
+    for table, (columns_before, rows) in before.items():
+        columns_after, rows_after = after[table]
+        indexes = [columns_after.index(column) for column in columns_before]
+        assert [tuple(row[index] for index in indexes) for row in rows_after] == rows
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
-    assert {"tasks", "task_deliveries", "task_messages", "action_requests"} <= tables(path)
+    assert {
+        "tasks",
+        "task_deliveries",
+        "task_messages",
+        "action_requests",
+        "department_edges",
+    } <= tables(path)
 
 
 def test_v2_task_only_database_is_repaired_and_upgraded(tmp_path):
@@ -246,15 +263,50 @@ def test_v2_task_only_database_is_repaired_and_upgraded(tmp_path):
     with Store(path) as store:
         assert store.get_task("task")["title"] == "Title"
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"preparation_id"} <= columns(path, "room")
     assert {"history_cursor", "previous_conversation_id"} <= columns(path, "sessions")
     assert "context_checks" in tables(path)
 
 
+def apply_v3(path):
+    with sqlite3.connect(path) as db:
+        for statement in TASK_SCHEMA.split(";"):
+            if statement.strip():
+                db.execute(statement)
+        db.execute("PRAGMA user_version=3")
+    return path
+
+
+def test_v3_to_v4_backfills_complete_department_edges(tmp_path):
+    data = tmp_path / "v3.sqlite"
+    version_one_database(data, tmp_path)
+    apply_context_v2(data)
+    with sqlite3.connect(data) as db:
+        db.execute("UPDATE leads SET deleted_at=NULL")
+        settings = LeadCreate("Second", "beacon", "Review", "test", "model-b", str(tmp_path))
+        db.execute(
+            "INSERT INTO leads(id,handle,settings,conversation_id,revision) VALUES(?,?,?,?,?)",
+            ("second", "beacon", json.dumps(asdict(settings)), "second-conversation", 1),
+        )
+        db.execute(
+            "INSERT INTO sessions(conversation_id,lead_id,created_at) VALUES(?,?,?)",
+            ("second-conversation", "second", "created"),
+        )
+    apply_v3(data)
+    with Store(data) as store:
+        graph = store.hierarchy()
+        assert {node["id"] for node in graph["nodes"]} == {"lead", "second"}
+        assert graph["edges"] == [{"a": "lead", "b": "second"}]
+        assert "active_recipient_ids" in columns(data, "room")
+    with sqlite3.connect(data) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 @pytest.mark.parametrize("shape", ["context", "tasks"])
-def test_v2_to_v3_failure_rolls_back_entire_upgrade(tmp_path, monkeypatch, shape):
+def test_v2_to_v4_failure_rolls_back_entire_upgrade(tmp_path, monkeypatch, shape):
     path = tmp_path / f"{shape}.sqlite"
     version_one_database(path, tmp_path)
     (apply_context_v2 if shape == "context" else apply_tasks_v2)(path)
@@ -263,8 +315,8 @@ def test_v2_to_v3_failure_rolls_back_entire_upgrade(tmp_path, monkeypatch, shape
 
     class FaultyConnection(sqlite3.Connection):
         def execute(self, sql, *args, **kwargs):
-            if sql.strip().upper() == "PRAGMA USER_VERSION=3":
-                raise sqlite3.OperationalError("synthetic v3 failure")
+            if sql.strip().upper() == "PRAGMA USER_VERSION=4":
+                raise sqlite3.OperationalError("synthetic v4 failure")
             return super().execute(sql, *args, **kwargs)
 
     def faulty_connect(*args, **kwargs):
@@ -272,7 +324,7 @@ def test_v2_to_v3_failure_rolls_back_entire_upgrade(tmp_path, monkeypatch, shape
 
     with monkeypatch.context() as patch:
         patch.setattr("department_studio.store.sqlite3.connect", faulty_connect)
-        with pytest.raises(sqlite3.OperationalError, match="synthetic v3"):
+        with pytest.raises(sqlite3.OperationalError, match="synthetic v4"):
             Store(path)
     assert table_snapshot(path) == before
     with sqlite3.connect(path) as db:

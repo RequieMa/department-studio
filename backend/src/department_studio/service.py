@@ -20,6 +20,7 @@ from department_studio.backends.registry import RuntimeRegistry, RuntimeUnavaila
 from department_studio.config import Settings
 from department_studio.domain import Conflict, ContextCheck, Delivery, Receipt
 from department_studio.models import ModelCatalog, ModelCatalogError
+from department_studio.records import RecordStore
 from department_studio.store import Store
 
 HISTORY_BYTES = 12000
@@ -61,12 +62,14 @@ class RoomService:
         backend: AgentBackend,
         settings: Settings,
         catalog: ModelCatalog | None = None,
+        records: RecordStore | None = None,
     ):
         self.store = store
         self._backends: RuntimeRegistry | None = None
         self.backend = backend
         self.settings = settings
         self.catalog = catalog
+        self.records = records
         self._wake = asyncio.Event()
         self._active: dict[str, _ActiveRun] = {}
         self._contexts: dict[str, _ActiveContext] = {}
@@ -100,8 +103,8 @@ class RoomService:
         task.add_done_callback(self._tasks.discard)
         return task
 
-    def post_human(self, text: str) -> Receipt:
-        receipt = self.store.post_human_message(text)
+    def post_human(self, text: str, *, public_note: bool = False) -> Receipt:
+        receipt = self.store.post_human_message(text, public_note=public_note)
         self._wake.set()
         return receipt
 
@@ -114,6 +117,23 @@ class RoomService:
         receipt = self.store.resolve_action_request(request_id, **body)
         self._wake.set()
         return receipt
+
+    def _records(self) -> RecordStore:
+        if self.records is None:
+            raise Conflict("Project records are unavailable.")
+        return self.records
+
+    def list_records(self, token: str) -> list[dict]:
+        self.bridge_identity(token)
+        return self._records().list()
+
+    def read_record(self, token: str, name: str) -> dict:
+        self.bridge_identity(token)
+        return self._records().read(name)
+
+    def write_record(self, token: str, name: str, content: str, mode: str) -> dict:
+        self.bridge_identity(token)
+        return self._records().write(name, content, mode)
 
     def knows_bridge_token(self, token: str) -> bool:
         return token in self._tokens or token in self._revoked

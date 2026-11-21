@@ -79,9 +79,9 @@ separate recovery point before further requests.
 ## Persistence and rollout
 
 Schema version 2 adds the preparation reservation/status records, history cursor
-and previous-conversation reference. The task feature adds schema v3; the current
-Store migrates v0/v1 through v2 to v3 in one transaction and preserves every
-pre-existing field. Restart always pauses the room and marks unfinished preparation
+and previous-conversation reference. Tasks add schema v3, while the hierarchy
+and default-addressing feature adds v4. The current Store migrates v0/v1 through
+v2, v3 and v4 in one transaction and preserves every pre-existing field. Restart always pauses the room and marks unfinished preparation
 interrupted, with no automatic replay.
 
 Back up the actual data directory while Studio is stopped before the first launch

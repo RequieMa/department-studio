@@ -172,7 +172,7 @@ complete. Compaction and fresh-context fallback never replay a previous request.
 
 Back up the actual persistent data directory with Studio stopped, then relaunch the
 root source with the same current data path and the configured model catalog/runtime setup.
-The updated server migrates the database to schema v3; keep the backup if you need
+The updated server migrates the database to schema v4; keep the backup if you need
 to revert to older source.
 
 ```bash

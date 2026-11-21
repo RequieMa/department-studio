@@ -31,6 +31,7 @@ let mentionDismissedKey = null;
 let deleting = false;
 const rosterNodes = new Map();
 const messageNodes = new Map();
+const expandedMessages = new Set();
 const dialog = $("#lead-dialog");
 const deleteDialog = $("#delete-dialog");
 const folderDialog = $("#folder-dialog");
@@ -97,6 +98,7 @@ function renderRoster() {
   }
   text($("#lead-count"), state.leads.length);
   $("#roster-empty").hidden = state.leads.length > 0;
+  $("#hierarchy-toggle").disabled = !authenticated || state.leads.length < 2;
   for (const lead of state.leads) {
     let card = rosterNodes.get(lead.id);
     if (!card) {
@@ -302,6 +304,27 @@ function renderMarkdownBody(node, source) {
   catch { node.replaceChildren(document.createTextNode(source)); }
 }
 
+function isPeerMessage(message) {
+  return message.sender_kind !== "human" && Array.isArray(message.recipient_ids) && message.recipient_ids.length > 0;
+}
+
+function peerSummary(message) {
+  const recipients = (message.recipient_ids || []).map((id, index) => {
+    const lead = state.leads.find((item) => item.id === id);
+    return lead?.name || message.recipient_handles?.[index] || "department";
+  });
+  return `${message.sender_name} → ${recipients.join(", ")}`;
+}
+
+function setMessageExpanded(id, expanded) {
+  const article = messageNodes.get(id);
+  const button = article?.querySelector(".message-collapse");
+  if (!article || !button) return;
+  article.classList.toggle("collapsed", !expanded);
+  button.setAttribute("aria-expanded", String(expanded));
+  button.setAttribute("aria-label", expanded ? "Collapse peer message" : "Expand peer message");
+}
+
 function renderMessages() {
   const conversation = $("#conversation");
   const nearBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 80;
@@ -315,6 +338,18 @@ function renderMessages() {
     let article = messageNodes.get(message.id);
     if (!article) {
       article = element("article", "message");
+      const summary = element("button", "message-collapse");
+      summary.type = "button";
+      summary.id = `message-collapse-${message.id}`;
+      summary.setAttribute("aria-controls", `message-detail-${message.id}`);
+      summary.addEventListener("click", () => {
+        const expanded = !expandedMessages.has(message.id);
+        if (expanded) expandedMessages.add(message.id);
+        else expandedMessages.delete(message.id);
+        setMessageExpanded(message.id, expanded);
+      });
+      const detail = element("div", "message-detail");
+      detail.id = `message-detail-${message.id}`;
       const header = element("div", "message-header");
       const avatar = element("span", `avatar ${tone(message.sender_id)}`, message.sender_name.slice(0, 1));
       avatar.setAttribute("aria-hidden", "true");
@@ -333,11 +368,23 @@ function renderMessages() {
       header.append(time);
       const body = element("div", "message-text");
       renderMarkdownBody(body, message.text);
-      article.append(header, body);
-      if (message.notice) article.append(element("p", "message-notice", message.notice));
-      article.append(element("div", "delivery-list"));
+      detail.append(header, body);
+      if (message.notice) detail.append(element("p", "message-notice", message.notice));
+      detail.append(element("div", "delivery-list"));
+      article.append(summary, detail);
       messageNodes.set(message.id, article);
       $("#messages").append(article);
+    }
+    const summary = article.querySelector(".message-collapse");
+    const collapsible = isPeerMessage(message);
+    summary.hidden = !collapsible;
+    if (collapsible) {
+      text(summary, peerSummary(message));
+      summary.title = `${message.sender_name} (@${message.sender_handle}) → ${(message.recipient_handles || []).map((handle) => `@${handle}`).join(", ")}`;
+      setMessageExpanded(message.id, expandedMessages.has(message.id));
+    } else {
+      article.classList.remove("collapsed");
+      summary.setAttribute("aria-expanded", "true");
     }
     const list = article.querySelector(".delivery-list");
     for (const delivery of deliveries.get(message.id) || []) {
@@ -549,16 +596,27 @@ function previewRecipients({ deliberate = false } = {}) {
   const input = $("#message-text").value;
   const { selected, unknown } = recipientsIn(input);
   const invalid = unknown.length > 0;
+  const active = (state.active_recipient_ids || [])
+    .map((id) => state.leads.find((lead) => lead.id === id))
+    .filter((lead) => lead?.enabled)
+    .map((lead) => lead.handle);
+  const publicNote = $("#public-note").checked;
+  const inherited = !selected.length && !publicNote ? active : [];
+  const effective = selected.length ? selected : inherited;
+  $("#public-note-wrap").hidden = active.length === 0;
   let description = "Public note · no department will be notified";
   if (invalid) description = `Unknown or disabled: ${unknown.map((handle) => `@${handle}`).join(", ")}`;
   else if (selected.length) description = `To ${selected.map((handle) => `@${handle}`).join(", ")}${state.paused ? " · room paused; this note will not start work" : ""}`;
+  else if (inherited.length) description = `Continuing with ${inherited.map((handle) => `@${handle}`).join(", ")}${state.paused ? " · room paused; this note will not start work" : ""}`;
+  else if (publicNote && active.length) description = "Public note · previous addressees are not continued";
   text($("#recipient-preview"), description);
-  renderRecipientContext(selected);
+  renderRecipientContext(effective);
   $("#recipient-preview").classList.toggle("invalid", invalid);
   $("#send").disabled = !authenticated || sending || invalid || !input.trim();
   renderMentions({ deliberate });
 }
 
+$("#public-note").addEventListener("change", () => previewRecipients({ deliberate: true }));
 $("#message-text").addEventListener("compositionstart", () => {
   composingMessage = true;
   dismissMentions();
@@ -620,7 +678,7 @@ $("#composer").addEventListener("submit", async (event) => {
   previewRecipients();
   notice("#composer-error");
   try {
-    await request("/api/messages", { method: "POST", body: { text: draft } });
+    await request("/api/messages", { method: "POST", body: { text: draft, public_note: $("#public-note").checked } });
     if ($("#message-text").value === draft) $("#message-text").value = "";
     await refresh();
   } catch (error) { notice("#composer-error", error.message); }
@@ -942,6 +1000,410 @@ $("#lead-form").addEventListener("submit", async (event) => {
   finally { saving = false; updatePermission(); }
 });
 
+// Theme preference is local to this browser and shared by every project.
+const themeButton = $("#theme-toggle");
+function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+function setTheme(mode, { persist = true } = {}) {
+  const next = mode === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = next;
+  document.documentElement.style.colorScheme = next;
+  if (persist) {
+    try { localStorage.setItem("department-studio-theme", next); } catch { /* Runtime preference still applies. */ }
+  }
+  updateThemeButton();
+}
+function updateThemeButton() {
+  const dark = currentTheme() === "dark";
+  text(themeButton, dark ? "Light mode" : "Dark mode");
+  themeButton.setAttribute("aria-pressed", String(dark));
+  themeButton.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+}
+themeButton.addEventListener("click", () => setTheme(currentTheme() === "dark" ? "light" : "dark"));
+updateThemeButton();
+
+// Project history: projects are independent rooms with their own SQLite data.
+const projectsDialog = $("#projects-dialog");
+let projectList = [];
+let activeProjectId = null;
+function projectDate(value) {
+  try { return new Date(value).toLocaleString(); } catch { return value || "Unknown"; }
+}
+function renderProjects() {
+  const list = $("#projects-list");
+  list.replaceChildren();
+  $("#projects-empty").hidden = projectList.length > 0;
+  for (const project of projectList) {
+    const row = element("li", `project-row${project.active ? " active" : ""}`);
+    const main = element("div", "project-main");
+    const title = element("div", "project-title-row");
+    title.append(element("strong", "", project.name));
+    if (project.active) title.append(element("span", "project-badge", "Current project"));
+    main.append(
+      title,
+      element("p", "project-meta", `Created ${projectDate(project.created_at)} · Last opened ${projectDate(project.last_opened_at)}`),
+    );
+    const actions = element("div", "project-actions");
+    if (!project.active) {
+      const switchButton = element("button", "secondary compact", "Switch");
+      switchButton.type = "button";
+      switchButton.addEventListener("click", async () => {
+        switchButton.disabled = true;
+        notice("#projects-error");
+        try {
+          await request(`/api/projects/${encodeURIComponent(project.id)}/activate`, { method: "POST" });
+          location.reload();
+        } catch (error) {
+          notice("#projects-error", error.message);
+          switchButton.disabled = false;
+        }
+      });
+      actions.append(switchButton);
+    }
+    const deleteButton = element("button", "danger compact", "Delete…");
+    deleteButton.type = "button";
+    deleteButton.disabled = project.active || projectList.length <= 1;
+    deleteButton.title = project.active
+      ? "Switch to another project before deleting this one."
+      : projectList.length <= 1 ? "The only project cannot be deleted." : "Delete this project's Studio data.";
+    deleteButton.addEventListener("click", async () => {
+      if (!window.confirm(`Delete project “${project.name}”?\n\nThis removes its departments, room history, tasks and native Studio sessions. Workspace files are not deleted.`)) return;
+      deleteButton.disabled = true;
+      notice("#projects-error");
+      try {
+        const updated = await request(
+          `/api/projects/${encodeURIComponent(project.id)}?confirm_name=${encodeURIComponent(project.name)}`,
+          { method: "DELETE" },
+        );
+        projectList = updated.projects;
+        activeProjectId = updated.active_id;
+        text($("#projects-receipt"), `Deleted “${project.name}”.`);
+        renderProjects();
+      } catch (error) {
+        notice("#projects-error", error.message);
+      } finally {
+        deleteButton.disabled = false;
+      }
+    });
+    actions.append(deleteButton);
+    row.append(main, actions);
+    list.append(row);
+  }
+}
+async function loadProjects() {
+  const data = await request("/api/projects");
+  projectList = data.projects || [];
+  activeProjectId = data.active_id;
+  const active = projectList.find((item) => item.id === activeProjectId);
+  if (active) {
+    text($("#active-project-name"), active.name);
+    document.title = `${active.name} · Department Studio`;
+  }
+  renderProjects();
+}
+async function openProjects() {
+  notice("#projects-error");
+  text($("#projects-receipt"), "");
+  $("#new-project-name").value = "";
+  projectsDialog.showModal();
+  $("#projects-toggle").setAttribute("aria-expanded", "true");
+  try { await loadProjects(); }
+  catch (error) { notice("#projects-error", error.message); }
+}
+$("#projects-toggle").addEventListener("click", openProjects);
+for (const id of ["close-projects", "close-projects-action"]) {
+  $(`#${id}`).addEventListener("click", () => projectsDialog.close());
+}
+projectsDialog.addEventListener("close", () => $("#projects-toggle").setAttribute("aria-expanded", "false"));
+$("#new-project-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = $("#new-project-name").value.trim();
+  if (!name) return;
+  const button = $("#create-project");
+  button.disabled = true;
+  notice("#projects-error");
+  text($("#projects-receipt"), "");
+  try {
+    await request("/api/projects", { method: "POST", body: { name } });
+    location.reload();
+  } catch (error) {
+    notice("#projects-error", error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+// Department hierarchy: an undirected complete-by-default graph.
+const hierarchyDialog = $("#hierarchy-dialog");
+let hierarchyGraph = { nodes: [], edges: [] };
+let hierarchySelection = null;
+let hierarchyPending = false;
+const SVG = "http://www.w3.org/2000/svg";
+function svgElement(tag, className, attributes = {}) {
+  const node = document.createElementNS(SVG, tag);
+  if (className) node.setAttribute("class", className);
+  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+  return node;
+}
+function hierarchyName(id) {
+  return hierarchyGraph.nodes.find((node) => node.id === id)?.name || "Department";
+}
+function hierarchyEdge(a, b) {
+  return hierarchyGraph.edges.some((edge) => (edge.a === a && edge.b === b) || (edge.a === b && edge.b === a));
+}
+function hierarchyPositions() {
+  const nodes = hierarchyGraph.nodes;
+  const positions = new Map();
+  if (nodes.length === 1) {
+    positions.set(nodes[0].id, { x: 320, y: 210 });
+    return positions;
+  }
+  const radius = Math.min(155, 70 + nodes.length * 13);
+  nodes.forEach((node, index) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / nodes.length;
+    positions.set(node.id, { x: 320 + Math.cos(angle) * radius, y: 210 + Math.sin(angle) * radius });
+  });
+  return positions;
+}
+function renderHierarchy() {
+  const graph = $("#hierarchy-graph");
+  graph.replaceChildren();
+  const nodes = hierarchyGraph.nodes;
+  $("#hierarchy-empty").hidden = nodes.length >= 2;
+  graph.hidden = nodes.length < 2;
+  $("#hierarchy-connect-all").disabled = nodes.length < 2 || hierarchyPending;
+  if (nodes.length < 2) {
+    text($("#hierarchy-status"), "");
+    return;
+  }
+  const positions = hierarchyPositions();
+  const edgeLayer = svgElement("g", "hierarchy-edges");
+  for (const edge of hierarchyGraph.edges) {
+    const a = positions.get(edge.a);
+    const b = positions.get(edge.b);
+    if (!a || !b) continue;
+    const group = svgElement("g", "hierarchy-edge-group", {
+      "data-a": edge.a,
+      "data-b": edge.b,
+      role: "button",
+      tabindex: "0",
+      "aria-label": `Disconnect ${hierarchyName(edge.a)} and ${hierarchyName(edge.b)}`,
+    });
+    const hit = svgElement("line", "hierarchy-edge-hit", {
+      x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+    });
+    const line = svgElement("line", "hierarchy-edge", {
+      x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+    });
+    const title = document.createElementNS(SVG, "title");
+    title.textContent = `Click to disconnect ${hierarchyName(edge.a)} and ${hierarchyName(edge.b)}`;
+    group.append(hit, line, title);
+    const disconnect = () => setHierarchyEdge(edge.a, edge.b, false);
+    group.addEventListener("click", disconnect);
+    group.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); disconnect(); }
+    });
+    edgeLayer.append(group);
+  }
+  const nodeLayer = svgElement("g", "hierarchy-nodes");
+  for (const node of nodes) {
+    const position = positions.get(node.id);
+    const group = svgElement("g", `hierarchy-node${hierarchySelection === node.id ? " selected" : ""}${node.enabled === false ? " disabled" : ""}`, {
+      "data-id": node.id,
+      role: "button",
+      tabindex: "0",
+      "aria-label": `${node.name} (@${node.handle})${hierarchySelection === node.id ? ", selected" : ""}`,
+    });
+    group.append(
+      svgElement("circle", "hierarchy-node-circle", { cx: position.x, cy: position.y, r: 30 }),
+    );
+    const label = svgElement("text", "hierarchy-node-name", {
+      x: position.x, y: position.y + 2, "text-anchor": "middle",
+    });
+    label.textContent = node.name.length > 13 ? `${node.name.slice(0, 12)}…` : node.name;
+    const handle = svgElement("text", "hierarchy-node-handle", {
+      x: position.x, y: position.y + 17, "text-anchor": "middle",
+    });
+    handle.textContent = `@${node.handle}`;
+    group.append(label, handle);
+    const select = () => selectHierarchyNode(node.id);
+    group.addEventListener("click", select);
+    group.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
+    });
+    nodeLayer.append(group);
+  }
+  graph.append(edgeLayer, nodeLayer);
+  const connected = hierarchyGraph.edges.length;
+  const total = (nodes.length * (nodes.length - 1)) / 2;
+  text($("#hierarchy-status"), hierarchySelection
+    ? `Selected ${hierarchyName(hierarchySelection)}. Choose another department to connect them.`
+    : `${connected} of ${total} links connected. Lines are mutual.`);
+}
+async function setHierarchyEdge(a, b, connected) {
+  if (hierarchyPending) return;
+  hierarchyPending = true;
+  notice("#hierarchy-error");
+  try {
+    hierarchyGraph = await request("/api/hierarchy/edges", {
+      method: "PUT",
+      body: { a, b, connected },
+    });
+    hierarchySelection = null;
+    renderHierarchy();
+    text($("#hierarchy-status"), connected
+      ? `Connected ${hierarchyName(a)} and ${hierarchyName(b)}.`
+      : `Disconnected ${hierarchyName(a)} and ${hierarchyName(b)}.`);
+  } catch (error) {
+    notice("#hierarchy-error", error.message);
+  } finally {
+    hierarchyPending = false;
+  }
+}
+async function selectHierarchyNode(id) {
+  if (hierarchyPending) return;
+  if (hierarchySelection === id) {
+    hierarchySelection = null;
+    renderHierarchy();
+    return;
+  }
+  if (!hierarchySelection) {
+    hierarchySelection = id;
+    renderHierarchy();
+    return;
+  }
+  const first = hierarchySelection;
+  if (hierarchyEdge(first, id)) {
+    hierarchySelection = null;
+    renderHierarchy();
+    text($("#hierarchy-status"), `${hierarchyName(first)} and ${hierarchyName(id)} are already connected.`);
+    return;
+  }
+  await setHierarchyEdge(first, id, true);
+}
+async function loadHierarchy() {
+  notice("#hierarchy-error");
+  hierarchySelection = null;
+  try {
+    hierarchyGraph = await request("/api/hierarchy");
+    renderHierarchy();
+  } catch (error) {
+    notice("#hierarchy-error", error.message);
+  }
+}
+$("#hierarchy-toggle").addEventListener("click", async () => {
+  hierarchyDialog.showModal();
+  await loadHierarchy();
+});
+for (const id of ["close-hierarchy", "hierarchy-close-action"]) {
+  $(`#${id}`).addEventListener("click", () => hierarchyDialog.close());
+}
+$("#hierarchy-connect-all").addEventListener("click", async () => {
+  if (hierarchyPending) return;
+  hierarchyPending = true;
+  notice("#hierarchy-error");
+  try {
+    hierarchyGraph = await request("/api/hierarchy/connect-all", { method: "POST" });
+    hierarchySelection = null;
+    renderHierarchy();
+    text($("#hierarchy-status"), "All departments are connected.");
+  } catch (error) {
+    notice("#hierarchy-error", error.message);
+  } finally {
+    hierarchyPending = false;
+  }
+});
+
+// Project records: durable Markdown shared by the human and every runtime.
+const recordsDialog = $("#records-dialog");
+let recordList = [];
+let selectedRecord = null;
+function recordNameForToday() {
+  const now = new Date();
+  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return `${stamp}-note.md`;
+}
+function renderRecords() {
+  const list = $("#records-list");
+  list.replaceChildren();
+  $("#records-empty").hidden = recordList.length > 0;
+  text($("#records-count"), recordList.length);
+  for (const record of recordList) {
+    const item = element("li");
+    const button = element("button", `record-entry${selectedRecord === record.name ? " selected" : ""}`);
+    button.type = "button";
+    button.append(
+      element("strong", "", record.name),
+      element("span", "", `${Math.ceil(record.size / 1024)} KB · ${new Date(record.modified).toLocaleString()}`),
+    );
+    button.addEventListener("click", () => openRecord(record.name));
+    item.append(button);
+    list.append(item);
+  }
+}
+async function openRecord(name) {
+  notice("#records-error");
+  try {
+    const data = await request(`/api/records/${encodeURIComponent(name)}`);
+    selectedRecord = data.name;
+    text($("#records-viewer-title"), data.name);
+    text($("#records-content"), data.content);
+    renderRecords();
+  } catch (error) {
+    notice("#records-error", error.message);
+  }
+}
+async function loadRecords({ select = null } = {}) {
+  const data = await request("/api/records");
+  recordList = data.records || [];
+  text($("#records-path"), data.path || "");
+  $("#records-path").title = data.path || "";
+  if (select) {
+    await openRecord(select);
+  } else if (selectedRecord && recordList.some((record) => record.name === selectedRecord)) {
+    await openRecord(selectedRecord);
+  } else {
+    selectedRecord = null;
+    text($("#records-viewer-title"), "Choose a record");
+    text($("#records-content"), "Select a record to read it here.");
+    renderRecords();
+  }
+}
+async function openRecords() {
+  notice("#records-error");
+  if (!$("#new-record-name").value) $("#new-record-name").value = recordNameForToday();
+  recordsDialog.showModal();
+  try { await loadRecords(); }
+  catch (error) { notice("#records-error", error.message); }
+}
+$("#records-toggle").addEventListener("click", openRecords);
+for (const id of ["close-records", "close-records-action"]) {
+  $(`#${id}`).addEventListener("click", () => recordsDialog.close());
+}
+$("#new-record-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = $("#new-record-name").value.trim();
+  const content = $("#new-record-content").value;
+  if (!name || !content.trim()) return;
+  const button = $("#create-record");
+  button.disabled = true;
+  notice("#records-error");
+  try {
+    const saved = await request("/api/records", {
+      method: "POST",
+      body: { name, content },
+    });
+    $("#new-record-content").value = "";
+    $("#new-record-name").value = recordNameForToday();
+    await loadRecords({ select: saved.name });
+  } catch (error) {
+    notice("#records-error", error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $("#activity-toggle").addEventListener("click", () => {
   const panel = $("#activity-panel");
   panel.hidden = !panel.hidden;
@@ -953,6 +1415,10 @@ const tasksUI = createTaskUI({
   viewMessage(id) {
     const article = messageNodes.get(id);
     if (!article) return;
+    if (article.classList.contains("collapsed")) {
+      expandedMessages.add(id);
+      setMessageExpanded(id, true);
+    }
     article.setAttribute("tabindex", "-1");
     article.focus({ preventScroll: true });
     article.scrollIntoView({ block: "center" });
@@ -960,7 +1426,11 @@ const tasksUI = createTaskUI({
 });
 
 if (!authenticated) requireLaunch();
-else refresh();
+else {
+  refresh();
+  loadProjects().catch(() => {});
+  loadRecords().catch(() => {});
+}
 window.addEventListener("hashchange", () => {
   const next = new URLSearchParams(location.hash.slice(1)).get("token");
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);

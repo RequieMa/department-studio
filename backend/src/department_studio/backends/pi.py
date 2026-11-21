@@ -42,7 +42,16 @@ RESOURCE_FLAGS = (
     "--no-context-files",
     "--offline",
 )
-DISCUSS_TOOLS = ("read", "grep", "find", "ls", "send_room_message")
+DISCUSS_TOOLS = (
+    "read",
+    "grep",
+    "find",
+    "ls",
+    "send_room_message",
+    "list_records",
+    "read_record",
+    "write_record",
+)
 RUNTIME_FAILURE = "Pi failed. Check the selected provider/model and local runtime setup."
 CONVERSATION_RECOVERY = (
     " Pause, then Resume room to prepare conversation context before sending a new request. "
@@ -144,7 +153,12 @@ class PiBackend:
         return rpc
 
     def _instructions(self, request: RunRequest) -> str:
-        return agent_instructions(request.lead, runtime="Pi", room_tool=ROOM_TOOL)
+        return agent_instructions(
+            request.lead,
+            runtime="Pi",
+            room_tool=ROOM_TOOL,
+            records_path=self.settings.data_dir / "records",
+        )
 
     async def _close_client(self, rpc: RpcProcess):
         confirmed = False
@@ -301,6 +315,9 @@ class PiBackend:
             lead = request.lead
             selection = self.catalog.require(lead.provider, lead.model_id, "pi")
             selection.require_api_key()
+            records_dir = self.settings.data_dir / "records"
+            records_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            records_dir.chmod(0o700)
             session_dir = self.settings.data_dir / "sessions" / lead.id
             session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             session_dir.chmod(0o700)
@@ -370,6 +387,9 @@ class PiBackend:
             lead = request.lead
             selection = self.catalog.require(lead.provider, lead.model_id, "pi")
             selection.require_api_key()
+            records_dir = self.settings.data_dir / "records"
+            records_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            records_dir.chmod(0o700)
             session_dir = self.settings.data_dir / "sessions" / lead.id
             session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             session_dir.chmod(0o700)

@@ -77,6 +77,7 @@ async def test_print_mode_uses_catalog_model_bridge_and_bounded_tools(
     assert set(args[args.index("--tools") + 1].split(",")) == {"Read", "Grep", "Glob"}
     allowed = args[args.index("--allowedTools") + 1]
     assert "mcp__room__send_room_message" in allowed
+    assert "mcp__room__write_record" in allowed
     assert launch["mcp_config"].find("department_studio.bridge_mcp") >= 0
     assert "${DEPARTMENT_STUDIO_BRIDGE_TOKEN}" in launch["mcp_config"]
     assert not launch["bridge_token_literal"]
@@ -86,6 +87,9 @@ async def test_print_mode_uses_catalog_model_bridge_and_bounded_tools(
     assert launch["config_dir"].endswith(request.lead.id + "/claude")
     assert launch["instructions"].find("Use uv for all Python commands.") >= 0
     assert request.lead.role in launch["instructions"]
+    assert "Keep room messages brief" in launch["instructions"]
+    assert str(tmp_path / "records") in launch["instructions"]
+    assert args[args.index("--add-dir") + 1] == str(tmp_path / "records")
     assert not launch["owner_present"]
     prompt = next(item for item in records(tmp_path) if item.get("checkpoint") == "prompt")
     assert prompt["prompt"] == request.prompt

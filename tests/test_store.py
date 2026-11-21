@@ -208,3 +208,38 @@ def test_recovery_preserves_identity_labels_and_interrupts_uncertain_work(tmp_pa
         assert [d.state for d in reopened.list_deliveries()] == ["interrupted", "canceled"]
         reopened.resume()
         assert reopened.claim_delivery() is None
+
+
+def test_unaddressed_follow_up_continues_the_last_addressees(store, tmp_path):
+    alpha = create_lead(store, tmp_path, "alpha")
+    beta = create_lead(store, tmp_path, "beta")
+    store.resume()
+    store.post_human_message("@alpha first")
+    receipt = store.post_human_message("follow up without a mention")
+    assert receipt.recipient_ids == [alpha.id]
+    assert store.active_recipient_ids() == [alpha.id]
+    store.post_human_message("@beta switch")
+    assert store.active_recipient_ids() == [beta.id]
+    assert store.post_human_message("continue beta").recipient_ids == [beta.id]
+    note = store.post_human_message("public note", public_note=True)
+    assert note.recipient_ids == []
+    assert store.active_recipient_ids() == [beta.id]
+    assert store.post_human_message("back to beta").recipient_ids == [beta.id]
+
+
+def test_deleted_active_addressee_is_removed_from_default_routing(store, tmp_path):
+    alpha = create_lead(store, tmp_path, "alpha")
+    store.post_human_message("@alpha first")
+    assert store.active_recipient_ids() == [alpha.id]
+    store.delete_lead(alpha.id, alpha.revision)
+    assert store.active_recipient_ids() == []
+
+
+def test_active_addressees_survive_store_restart(tmp_path):
+    path = tmp_path / "room.sqlite"
+    with Store(path) as store:
+        alpha = create_lead(store, tmp_path, "alpha")
+        store.post_human_message("@alpha remember")
+    with Store(path) as reopened:
+        assert reopened.active_recipient_ids() == [alpha.id]
+        assert reopened.post_human_message("follow up").recipient_ids == []  # room is paused

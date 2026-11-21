@@ -23,7 +23,7 @@ owner deletion and reload.
 Root `main` advanced with context maintenance while the task branch was isolated.
 The reconciliation on `integration/runtimes-tasks`:
 
-- keeps context maintenance as schema v2 and moves tasks to schema v3;
+- keeps context maintenance as schema v2, moves tasks to schema v3, and reserves schema v4 for hierarchy/default addressing;
 - makes the v2 step idempotent so a released context-only database and the
   short-lived task-only v2 shape both upgrade safely;
 - combines bounded incremental room history with the immutable task snapshot;
@@ -39,11 +39,11 @@ and workspace files are retained.
 
 The combined source has passed:
 
-- **316 ordinary tests** using temporary SQLite and synthetic runtime processes,
+- **350 ordinary tests** using temporary SQLite and synthetic runtime processes,
   including catalog, registry, Claude Code, DeepSeek Harness and MCP bridge fixtures.
-- **17 Chromium browser tests** against an owned local synthetic HTTP server,
+- **21 Chromium browser tests** against an owned local synthetic HTTP server,
   including three task-specific real-endpoint tests and the runtime/model dialog.
-- **6 Node bridge tests**, JavaScript syntax, Ruff lint/format and whitespace checks.
+- **7 Node bridge tests**, JavaScript syntax, Ruff lint/format and whitespace checks.
 - Source-distribution → wheel build. Installed-artifact checks run away from the
   checkout with source-import environment overrides removed. They verify packaged
   `tasks.py`, `task_api.py`, the runtime adapters, the default model catalog, the
@@ -89,7 +89,7 @@ permission/authentication/cancellation change or watchdog implementation is incl
 
 Before a human-controlled upgrade, stop all writers and back up the entire actual
 persistent directory and native sessions. Use the same absolute `--data-dir`.
-Combined schema v3 is additive but there is no downgrade procedure. The existing CLI
+Combined schema v4 is additive but there is no downgrade procedure. The existing CLI
 opens Store before binding, so failed startup may still have migrated a database.
 See [the task contract](../backend/TASKS.md) and
 [the deferred watchdog design](watchdog-follow-up.md).

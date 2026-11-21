@@ -89,6 +89,9 @@ async def test_explicit_session_model_workspace_and_restricted_launch_policy(
         "find",
         "ls",
         "send_room_message",
+        "list_records",
+        "read_record",
+        "write_record",
     }
     for flag in (
         "--no-approve",
@@ -107,6 +110,9 @@ async def test_explicit_session_model_workspace_and_restricted_launch_policy(
     assert "Use uv for all Python commands." in instructions
     assert request.lead.role in instructions
     assert "not filesystem isolation" in instructions
+    assert "Project records folder:" in instructions
+    assert "Keep room messages brief" in instructions
+    assert str(tmp_path / "records") in instructions
     assert "synthetic-runtime-credential" not in outcome.text
     assert outcome.native_session_ref
     await backend.close()

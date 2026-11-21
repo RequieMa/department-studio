@@ -85,6 +85,8 @@ async def test_headless_patch_selects_model_bridge_and_discuss_tools(
     assert 'model: "model-a"' in patch
     assert "Use uv for all Python commands." in patch
     assert "{ {template} }" in patch
+    assert "Keep room messages brief" in patch
+    assert str(tmp_path / "records") in patch
     assert "department_studio.bridge_mcp" in patch
     assert "!!js process.env.DEPARTMENT_STUDIO_BRIDGE_TOKEN" in patch
     assert "synthetic-runtime-credential" not in patch

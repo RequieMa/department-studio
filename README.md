@@ -56,9 +56,48 @@ Studio owns the selectable model catalog; it does not reuse a Pi provider list o
 
 Pi receives a generated, per-run `PI_CODING_AGENT_DIR` containing only the selected Studio provider, so an unrelated Pi profile cannot supply or override the catalog. Claude Code receives the model and optional Anthropic-compatible endpoint from the catalog. DeepSeek Harness receives the model through a per-run profile patch. The room bridge is a Pi extension for Pi and a stdio MCP server for Claude Code and DeepSeek Harness.
 
-Edits to settings require the department to have no queued, running or stopping delivery. Renaming preserves its ID and native conversation; old room messages retain their original labels. Changing workspaces creates a fresh native session while preserving room history and prior session references.
+Edits to settings require the department to have no queued, running or stopping delivery. Renaming preserves its ID and native conversation; old room messages retain their original labels. Changing the workspace or runtime creates a fresh native session while preserving room history and prior session references.
 
-Edits to settings require the department to have no queued, running or stopping delivery. Renaming preserves its ID and native conversation; old room messages retain their original labels. Changing workspaces creates a fresh native session while preserving room history and prior session references.
+## Projects and project history
+
+See [project rooms, records, hierarchy and default addressing](docs/projects-records-hierarchy.md) for the storage layout, APIs and enforcement rules.
+
+The header shows the current project. Click it to open **Project history**, where you can:
+
+- create a new project (it opens as a fresh, paused room);
+- switch to another project;
+- delete an inactive project after confirming its name in the browser dialog.
+
+Each project owns a separate `room.sqlite`, departments, room history, tasks and native session directory. Switching confirms the current room's stop first, then opens the target. Deleting a project removes only Studio's private project data; it never deletes the configured workspace. The only remaining project cannot be deleted, and the active project must be switched away from first.
+
+An existing single room is adopted as **My first project** in place. New projects are created under `projects/<id>/` inside the data directory. The selected project is remembered in `active_project.json`.
+
+## Records, hierarchy and addressing
+
+### Project records
+
+Every project has a private `records/` folder beside its SQLite database. It is the durable audit trail shared by the human and every department. Keep room messages short: put decisions, evidence, file paths, handoffs and longer findings into a Markdown record, then reference its exact absolute path in the room.
+
+- The **Records** button opens the list, viewer and human note form.
+- Every runtime gets `list_records`, `read_record` and `write_record` through the room bridge. DeepSeek Harness reads are unconfined; Develop writes use its full-access mode. Pi and Claude Code also receive the absolute folder path.
+- Record names are flat `.md` filenames. Content is bounded at 512 KiB; credentials and raw private reasoning are prohibited.
+- Records belong to their project and are removed with that project's Studio data.
+
+### Department hierarchy
+
+**Department hierarchy** opens an undirected graph for the current project. The default is a complete graph: every department may address every other department through the room tool. Click a line to disconnect it; click two departments to connect them. Links are mutual.
+
+Hierarchy is enforced server-side only for agent-to-agent bridge messages. The human can still address any department. A denied bridge call stores no message and returns an actionable error to that runtime. Adding a department connects it to all existing departments; deleting a department removes its edges. Hierarchy belongs to the project.
+
+### Default addressing and public notes
+
+If a human message has no `@mention`, it continues with the recipients of the last explicit human address. After `@atlas` you can send a follow-up without mentioning Atlas again. An explicit mention replaces the active recipient set; `@all` selects every enabled department at that moment.
+
+Use the composer checkbox **Don’t continue the previous addressees** to send an explicit public note. It applies only when the message has no mention. Sending a public note leaves the active set unchanged. Disabled or deleted departments are filtered out; if none remain, the message becomes a public note with a notice.
+
+### Dark mode
+
+The header theme button switches between light and dark. Without an explicit choice the page follows the operating system's `prefers-color-scheme`; an explicit choice is stored in this browser's local storage and applies across projects. Theme state is local UI preference, not project data.
 
 ## Work in the room
 
@@ -66,7 +105,7 @@ For a copyable two-department example, see the [sample conversation](docs/sample
 includes an ordinary note, a lead-to-lead request and a summary back to you;
 illustrative replies are clearly separated from real model output.
 
-An unaddressed message is a public note. Use `@handle` to request a response, or `@all` to address every enabled department. The composer previews recipients; the server validates them again. Messages sent while paused remain public and are not replayed when you resume.
+Use `@handle` to request a response or `@all` to address every enabled department. An unaddressed message continues with the last explicit human addressees; use the **Don’t continue the previous addressees** checkbox for a public note. The composer previews the effective recipients, and the server validates them again. Messages sent while paused are stored but addressed deliveries are not dispatched, and are not replayed when you resume.
 
 Leads receive the attributed request and originating human request in full, plus bounded updates from public room history. Background context uses at most the latest 50 new messages, excerpted within a 12,000-byte limit; a persisted per-conversation cursor avoids repeating earlier snapshots. Each department keeps a distinct native conversation even when departments share a workspace or runtime.
 
@@ -82,11 +121,11 @@ Instructions target that node's stable department ID; mentions inside them do no
 
 **Run Activity** shows only explicit unresolved, currently actionable human requests—not routine run completions or completion toasts. Persisted single-choice requests present radio options and atomically record the selected choice with a public task follow-up. Request authoring is available through the **owner API only** in v1; departments do not automatically create selectors from their prose, so an empty Activity feed is normal. Closed/unavailable targets retain decision history in task details but leave the actionable feed.
 
-See [backend/TASKS.md](backend/TASKS.md) for APIs, idempotency, lifecycle, pagination and migration details. Context maintenance and tasks now share **schema v3**: v1 adds deletion, v2 adds context checks, and v3 adds tasks. Stop writers and back up the full persistent data/native sessions before upgrading; use the same absolute data directory and do not downgrade afterward. A port-bind failure does not guarantee the database was untouched: the current CLI opens Store before binding.
+See [backend/TASKS.md](backend/TASKS.md) for APIs, idempotency, lifecycle, pagination and migration details. Context maintenance, tasks and hierarchy now share **schema v4**: v1 adds deletion, v2 adds context checks, v3 adds tasks, and v4 adds the department hierarchy plus default-addressing state. Stop writers and back up the full persistent data/native sessions before upgrading; use the same absolute data directory and do not downgrade afterward. A port-bind failure does not guarantee the database was untouched: the current CLI opens Store before binding.
 
 ## Discuss, Develop and manual continuation
 
-**Discuss** is a reduced tool set, **not filesystem isolation**: Pi gets read/search/list plus the room tool; Claude Code gets `Read`, `Grep`, `Glob` plus the MCP room tool; DeepSeek Harness gets its read/search tools with write, edit and shell tools disabled. Files are accessed as the local OS user; the selected workspace is not a sandbox.
+**Discuss** is a reduced tool set, **not filesystem isolation**: Pi gets read/search/list plus the room tools; Claude Code gets `Read`, `Grep`, `Glob` plus the MCP room tools; DeepSeek Harness gets its read/search tools with write, edit and shell tools disabled. All runtimes can list/read/append project records through the room bridge. Files are accessed as the local OS user; the selected workspace is not a sandbox.
 
 **Develop** adds editing, writing and shell tools. The UI requires explicit confirmation when enabling it. This authorizes local work needed for your explicit request, including project dependency and test commands. It does not grant permission to push, publish, deploy, access unrelated data, perform unrelated destructive actions, or use additional external services. Agents are instructed to ask you in the room first. These are operating rules for trusted local agents; a general shell is not a universal approval enforcement system.
 
@@ -100,9 +139,9 @@ For self-development, first save a Git baseline and select separate workspaces/w
 
 ## Data and runtime boundary
 
-The default `.department-studio/` directory is git-ignored and private to the local user. It contains `room.sqlite`, a process lock and `sessions/<department-id>/`. Keep it outside tracked source when choosing a custom location. A second Studio process cannot open the same data directory.
+The default `.department-studio/` directory is git-ignored and private to the local user. It contains a process lock, `active_project.json`, and either the adopted legacy room (`room.sqlite`, `sessions/`, `records/`) or `projects/<project-id>/` directories with the same per-project files. Keep it outside tracked source when choosing a custom location. A second Studio process cannot open the same data directory.
 
-The default is relative to your launch directory. To keep departments, room history and native conversations across launches, always use the same explicit absolute `--data-dir`; switching directories/checkouts otherwise opens a different room. The local `/live-demo/` directory is also ignored, but custom locations elsewhere still need explicit exclusion. Department deletion retains history and native session references; it does not delete workspace/session files. Its schema migration runs when opening an old store, so back up with the service stopped before upgrading and do not downgrade to an older binary afterward.
+The default is relative to your launch directory. To keep projects, room history and native conversations across launches, always use the same explicit absolute `--data-dir`; switching directories/checkouts otherwise opens a different set of projects. The local `/live-demo/` directory is also ignored, but custom locations elsewhere still need explicit exclusion. Department deletion retains history and native session references; it does not delete workspace/session files. Project deletion removes that project's Studio database, records, native session directory and metadata; it never deletes the configured workspace. Schema migrations run when opening an old store, so back up with the service stopped before upgrading and do not downgrade to an older binary afterward.
 
 SQLite owns department identity, public messages, chains, receipts and delivery state. Each runtime owns its native session files: Pi and Claude Code sessions live under the Studio data directory, while DeepSeek Harness uses its own `DSH_HOME`. A fresh child or one-shot process is launched for each delivery with the department's native session reference; its immutable runtime credential expires with that delivery. Browser owner credentials are never passed to a runtime. Studio discards raw stderr and sanitizes runtime errors instead of storing raw logs.
 
@@ -110,7 +149,7 @@ The application protects local roles and accidental cross-origin access. It is a
 
 ## Verification
 
-All Python environments, dependencies and commands use `uv`. The ordinary test suite uses deterministic backends plus fake Pi, Claude Code and DeepSeek Harness subprocesses; it does not call live models. A local MCP bridge test exercises the stdio JSON-RPC boundary against a loopback HTTP fixture.
+All Python environments, dependencies and commands use `uv`. The ordinary test suite uses deterministic backends plus fake Pi, Claude Code and DeepSeek Harness subprocesses; it does not call live models. A local MCP bridge test exercises the stdio JSON-RPC boundary against a loopback HTTP fixture, including record tools. Current verification: **350 ordinary tests, 21 Chromium browser tests and 7 Node bridge tests**, plus Ruff, JavaScript syntax and an installed-wheel build.
 
 ```bash
 uv sync --locked

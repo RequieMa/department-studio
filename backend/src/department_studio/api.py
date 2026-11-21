@@ -1,6 +1,7 @@
 """Authenticated local HTTP boundary for the runtime-neutral room service."""
 
-from contextlib import ExitStack, asynccontextmanager
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Literal
@@ -18,7 +19,12 @@ from department_studio.backends.registry import RuntimeRegistry
 from department_studio.config import DataDirectory, Settings
 from department_studio.domain import Conflict, Invalid, LeadCreate, NotFound
 from department_studio.folders import browse_folders
+from department_studio.hierarchy_api import router as hierarchy_router
 from department_studio.models import ModelCatalog, ModelCatalogError, load_catalog
+from department_studio.project_api import router as project_router
+from department_studio.projects import EmbeddedProjectManager, ProjectManager
+from department_studio.records import RecordStore
+from department_studio.records_api import router as records_router
 from department_studio.security import OwnerCredential, allowed_request
 from department_studio.service import RoomService
 from department_studio.store import Store
@@ -59,6 +65,7 @@ class LeadPatch(LeadBody):
 
 class MessageBody(StrictBody):
     text: str = Field(min_length=1, max_length=32000)
+    public_note: bool = False
 
 
 class BridgeBody(MessageBody):
@@ -66,11 +73,37 @@ class BridgeBody(MessageBody):
     recipients: list[str] = Field(default_factory=list, max_length=64)
 
 
+class BridgeRecordBody(StrictBody):
+    name: str = Field(min_length=1, max_length=128)
+    content: str = Field(min_length=1, max_length=524288)
+    mode: Literal["append", "replace"] = "append"
+
+
+def _registry(
+    settings: Settings,
+    models: ModelCatalog,
+    backend: AgentBackend | None,
+    backend_factory: Callable[[], AgentBackend] | None,
+) -> RuntimeRegistry:
+    if backend_factory is not None:
+        return RuntimeRegistry.single(backend_factory())
+    if backend is not None:
+        return RuntimeRegistry.single(backend)
+    return RuntimeRegistry(
+        {
+            "pi": PiBackend(settings, models),
+            "claude": ClaudeBackend(settings, models),
+            "deepseek": DeepSeekBackend(settings, models),
+        }
+    )
+
+
 def create_app(
     settings: Settings,
     *,
     store: Store | None = None,
     backend: AgentBackend | None = None,
+    backend_factory: Callable[[], AgentBackend] | None = None,
     catalog: ModelCatalog | None = None,
     owner_token: str | None = None,
 ) -> FastAPI:
@@ -79,37 +112,40 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        with ExitStack() as stack:
-            active_store = store
-            if active_store is None:
-                stack.enter_context(DataDirectory(settings.data_dir))
-                active_store = stack.enter_context(
-                    Store(
-                        settings.data_dir / "room.sqlite",
-                        max_chain_deliveries=settings.max_chain_deliveries,
-                    )
-                )
-            registry = (
-                RuntimeRegistry.single(backend)
-                if backend is not None
-                else RuntimeRegistry(
-                    {
-                        "pi": PiBackend(settings, models),
-                        "claude": ClaudeBackend(settings, models),
-                        "deepseek": DeepSeekBackend(settings, models),
-                    }
-                )
-            )
-            service = RoomService(active_store, registry, settings, models)
-            app.state.store = active_store
+        if store is not None:
+            registry = _registry(settings, models, backend, backend_factory)
+            records = RecordStore(settings.data_dir / "records").ensure()
+            service = RoomService(store, registry, settings, models, records)
+            manager = EmbeddedProjectManager(settings, store, service, records)
+            app.state.projects = manager
+            app.state.store = store
             app.state.service = service
+            app.state.records = records
             app.state.catalog = models
             await service.start()
             try:
                 yield
             finally:
-                await service.close()
+                await manager.close()
                 if not service.shutdown_confirmed:
+                    raise RuntimeError(
+                        "Shutdown could not confirm runtime stop. Inspect local processes."
+                    )
+            return
+        with DataDirectory(settings.data_dir):
+            factory = backend_factory or ((lambda: backend) if backend is not None else None)
+            manager = ProjectManager(settings, models, backend_factory=factory)
+            await manager.start()
+            app.state.projects = manager
+            app.state.store = manager.store
+            app.state.service = manager.service
+            app.state.records = manager.records
+            app.state.catalog = models
+            try:
+                yield
+            finally:
+                await manager.close()
+                if not app.state.service.shutdown_confirmed:
                     raise RuntimeError(
                         "Shutdown could not confirm runtime stop. Inspect local processes."
                     )
@@ -117,6 +153,9 @@ def create_app(
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.owner = owner
     app.include_router(task_router)
+    app.include_router(project_router)
+    app.include_router(hierarchy_router)
+    app.include_router(records_router)
 
     @app.middleware("http")
     async def local_access(request: Request, call_next):
@@ -145,10 +184,18 @@ def create_app(
             is_runtime = app.state.service.knows_bridge_token(token)
             if not is_owner and not is_runtime:
                 return reject(401, "A valid launch or runtime credential is required.")
-            bridge = request.url.path == "/api/bridge/messages"
+            bridge = request.url.path.startswith("/api/bridge/")
             if (bridge and not is_runtime) or (not bridge and not is_owner):
                 return reject(403, "This credential cannot perform that action.")
             request.state.token = token
+        projects = getattr(app.state, "projects", None)
+        if (
+            projects is not None
+            and getattr(projects, "busy", False)
+            and request.url.path.startswith("/api/")
+            and not request.url.path.startswith("/api/projects")
+        ):
+            return reject(503, "A project switch is in progress; retry shortly.")
         response = await call_next(request)
         response.headers.update(SECURITY_HEADERS)
         return response
@@ -232,7 +279,7 @@ def create_app(
 
     @app.post("/api/messages")
     async def post_human(body: MessageBody):
-        return asdict(app.state.service.post_human(body.text))
+        return asdict(app.state.service.post_human(body.text, public_note=body.public_note))
 
     @app.post("/api/bridge/messages")
     async def post_bridge(body: BridgeBody, request: Request):
@@ -240,6 +287,20 @@ def create_app(
             app.state.service.post_bridge(
                 request.state.token, body.call_id, body.text, body.recipients
             )
+        )
+
+    @app.get("/api/bridge/records")
+    async def bridge_records(request: Request):
+        return {"records": app.state.service.list_records(request.state.token)}
+
+    @app.get("/api/bridge/records/{name}")
+    async def bridge_read_record(name: str, request: Request):
+        return app.state.service.read_record(request.state.token, name)
+
+    @app.post("/api/bridge/records")
+    async def bridge_write_record(body: BridgeRecordBody, request: Request):
+        return app.state.service.write_record(
+            request.state.token, body.name, body.content, body.mode
         )
 
     @app.post("/api/room/pause")
@@ -261,6 +322,10 @@ def create_app(
     @app.get("/")
     async def index():
         return FileResponse(static / "index.html")
+
+    @app.get("/theme.js")
+    async def theme_javascript():
+        return FileResponse(static / "theme.js", media_type="text/javascript")
 
     @app.get("/app.js")
     async def javascript():

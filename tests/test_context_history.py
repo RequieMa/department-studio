@@ -51,7 +51,7 @@ async def test_history_cursor_deduplicates_without_skipping_messages_arriving_du
     await until(lambda: backend.requests)
     first = backend.requests[0]
     assert "Earlier public context" in first.prompt
-    service.post_human("New context while the first request is running")
+    service.post_human("New context while the first request is running", public_note=True)
     backend.release(first, text="First result")
     await until(lambda: store.get_delivery(first.id).state == "completed")
     assert store.session_context(lead.conversation_id)["history_cursor"] == 2

@@ -165,15 +165,18 @@ After the user chooses and configures real models and explicitly authorizes infe
 No live collaboration, unrestricted application agents, self-development run, A2A implementation or deployment was started as part of this verification.
 
 
-## Current runtime/catalog/task reconciliation — November 21, 2026
+## Current runtime/catalog/project reconciliation — November 21, 2026
 
 The combined branch passed:
 
-- 316 ordinary tests with temporary SQLite, synthetic backends and fixture Pi,
+- 350 ordinary tests with temporary SQLite, synthetic backends and fixture Pi,
   Claude Code and DeepSeek Harness subprocesses.
-- 17 Chromium browser tests against the owned synthetic server, including task
-  branches/decisions and the runtime/model dialog.
-- 6 Node bridge-extension tests, Ruff lint/format and JavaScript syntax checks.
+- 21 Chromium browser tests against the owned synthetic server, including task
+  branches/decisions, the runtime/model dialog, project history/switch/delete,
+  records, hierarchy toggling, peer-message folding, default addressing and dark mode.
+- 7 Node bridge-extension tests, Ruff lint/format and JavaScript syntax checks.
+- A real-database **copy** migrated from schema v2 to v4 with all 5 departments,
+  180 messages and 116 deliveries preserved; hierarchy backfilled to a complete graph.
 - Source-distribution to wheel build and installed-artifact checks, including the
   packaged default catalog, runtime adapters, MCP bridge and task assets.
 

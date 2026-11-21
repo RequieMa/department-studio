@@ -102,11 +102,12 @@ The only Activity records are explicit unresolved, currently actionable requests
 
 ## Storage, verification and release boundary
 
-Additive transactional schema v3: `tasks`, `task_deliveries`, `task_messages`,
-`task_instructions`, `task_requests`, `action_requests`. Context maintenance owns
-v2; tasks own v3. v0→v1→v2→v3, v1→v3 and released v2→v3 retain prior rows,
+Additive transactional schema v3 for tasks: `tasks`, `task_deliveries`,
+`task_messages`, `task_instructions`, `task_requests`, `action_requests`.
+Context maintenance owns v2; tasks own v3; the later hierarchy/default-addressing
+feature owns v4. v0→v1→v2→v3→v4 and released v2/v3 databases retain prior rows,
 tombstones, sessions, receipts and context checks. A short-lived pre-merge task-only
-v2 shape is repaired by the idempotent v2 step before tasks are added. Failures roll
+v2 shape is repaired by the idempotent v2 step before tasks and v4 are added. Failures roll
 back the whole upgrade; unknown future versions are refused before schema/journal
 writes.
 

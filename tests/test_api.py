@@ -51,6 +51,7 @@ async def test_first_run_empty_paused_and_user_configuration_persists(http_app, 
         "paused": True,
         "preparing": False,
         "context_checks": [],
+        "active_recipient_ids": [],
         "leads": [],
         "messages": [],
         "deliveries": [],
@@ -360,3 +361,30 @@ async def test_runtime_availability_is_reported_without_starting_a_process(store
             infos = {item["kind"]: item for item in response.json()["runtimes"]}
             assert all(item["available"] is False for item in infos.values())
             assert infos["claude"]["capabilities"]["room_bridge"] is True
+
+
+async def test_api_continuation_and_public_note_addressing(http_app, tmp_path):
+    client, app, _ = http_app
+    lead = (await client.post("/api/leads", json=lead_body(tmp_path))).json()
+    await client.post("/api/room/resume")
+    await until(lambda: not app.state.store.paused)
+    await client.post("/api/messages", json={"text": "@atlas first"})
+    await client.post("/api/messages", json={"text": "follow up"})
+    humans = [
+        message
+        for message in (await client.get("/api/state")).json()["messages"]
+        if message["sender_kind"] == "human"
+    ]
+    assert humans[-1]["recipient_ids"] == [lead["id"]]
+    assert (await client.get("/api/state")).json()["active_recipient_ids"] == [lead["id"]]
+    note = await client.post("/api/messages", json={"text": "public note", "public_note": True})
+    assert note.status_code == 200
+    humans = [
+        message
+        for message in (await client.get("/api/state")).json()["messages"]
+        if message["sender_kind"] == "human"
+    ]
+    assert humans[-1]["recipient_ids"] == []
+    assert (await client.get("/api/state")).json()["active_recipient_ids"] == [lead["id"]]
+    invalid = await client.post("/api/messages", json={"text": "note", "public_note": "yes"})
+    assert invalid.status_code == 422
