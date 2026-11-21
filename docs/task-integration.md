@@ -3,8 +3,8 @@
 ## Scope and source lineage
 
 The human approved implementation and local integration to `main`. The task feature
-is now integrated on the `integration/runtimes-tasks` branch together with the
-runtime abstraction and Studio-owned model catalog.
+is now merged to `main` together with the runtime abstraction and Studio-owned
+model catalog. The integration branch is retained for audit.
 
 Integrated source lines:
 
