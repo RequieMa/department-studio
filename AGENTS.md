@@ -25,10 +25,10 @@ This is a user requirement, not an optional preference.
 
 ## Runtime extensibility
 
-- Start with Pi, as selected by the user; retain an abstraction for other agent runtimes later.
-- Keep persistent department identity and room behavior independent of Pi-specific session IDs, commands and event shapes.
-- Distinguish agent runtime selection from model/provider selection.
-- Approved architecture: a runtime-neutral core, a Pi RPC adapter first, and an A2A interoperability boundary later. Do not implement A2A in the bootstrap or claim conformance before it is implemented and verified.
+- Support Pi, Claude Code and DeepSeek Harness behind the runtime-neutral backend contract. Keep the contract extensible for other agent runtimes.
+- Keep persistent department identity and room behavior independent of runtime-specific session IDs, commands and event shapes.
+- Distinguish agent runtime selection from model/provider selection. Studio owns the selectable model catalog; runtimes translate a selection into their own flags or environment.
+- Approved architecture: a runtime-neutral core, normalized local adapters, and an A2A interoperability boundary later. Do not implement A2A in the bootstrap or claim conformance before it is implemented and verified.
 
 ## Bootstrap and self-development
 
@@ -41,4 +41,4 @@ This is a user requirement, not an optional preference.
 
 ## Current phase
 
-The bootstrap design is approved, including user-defined department names. Proceed with implementation planning and test-driven implementation of `docs/superpowers/specs/2026-11-19-bootstrap-design.md`. Pi RPC is the first adapter; A2A is deferred. Use deterministic backends and subprocess fixtures for automated tests. Live model calls require user-selected models and explicit authorization; do not launch unrestricted agents.
+The bootstrap design is approved and implemented, with the later runtime/catalog extension described in `docs/runtime-abstraction.md`. Pi, Claude Code and DeepSeek Harness adapters exist; A2A is deferred. Use deterministic backends and subprocess fixtures for automated tests. Live model calls require user-selected models and explicit authorization; do not launch unrestricted agents.

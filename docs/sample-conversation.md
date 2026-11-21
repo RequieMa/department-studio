@@ -75,5 +75,5 @@ You remain the project lead. Finish with an unaddressed note such as
 The first addressed request intends two deliveries; the summary is a separate
 human request. The application's eight-delivery allowance still applies to each
 chain. Sending these addressed prompts starts real inference with your selected
-models. See `live-demo.md` for QGenie setup and `verification.md` for the remaining
+models. See `live-demo.md` for model-catalog and runtime setup and `verification.md` for the remaining
 live acceptance checks.

@@ -2,6 +2,8 @@
 
 import ipaddress
 import math
+import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +17,10 @@ class Settings:
     port: int = 8765
     data_dir: Path = field(default_factory=lambda: Path(".department-studio"))
     pi_executable: str = "pi"
+    claude_executable: str = "claude"
+    deepseek_executable: str = "dsh"
+    deepseek_profile: str = "headless"
+    models_config: Path | None = None
     max_concurrency: int = 2
     max_chain_deliveries: int = 8
     run_timeout_seconds: float = 300
@@ -36,11 +42,40 @@ class Settings:
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be a finite positive number.")
-        executable = shutil.which(str(self.pi_executable))
-        if not executable:
-            raise ValueError("Pi executable not found; install Pi or pass --pi-executable PATH.")
-        object.__setattr__(self, "pi_executable", str(Path(executable).resolve()))
+        for name in ("pi_executable", "claude_executable", "deepseek_executable"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must name an installed executable or path.")
+            resolved = shutil.which(value.strip())
+            if resolved:
+                object.__setattr__(self, name, str(Path(resolved).resolve()))
+            else:
+                object.__setattr__(self, name, value.strip())
+        if not isinstance(self.deepseek_profile, str) or not re.fullmatch(
+            r"[a-z][a-z0-9_-]{0,63}", self.deepseek_profile
+        ):
+            raise ValueError("deepseek_profile must be a lowercase profile name.")
         object.__setattr__(self, "data_dir", Path(self.data_dir).expanduser().resolve())
+        models_config = self.models_config
+        if models_config is None:
+            models_config = os.environ.get("DEPARTMENT_STUDIO_MODELS_CONFIG")
+        if models_config is not None:
+            object.__setattr__(self, "models_config", Path(models_config).expanduser().resolve())
+
+    def runtime_command(self, kind: str) -> str | None:
+        """Resolve one runtime executable without making every runtime mandatory."""
+        value = {
+            "pi": self.pi_executable,
+            "claude": self.claude_executable,
+            "deepseek": self.deepseek_executable,
+        }.get(kind)
+        if not value:
+            return None
+        found = shutil.which(value)
+        if found:
+            return str(Path(found).resolve())
+        path = Path(value).expanduser()
+        return str(path.resolve()) if path.is_file() else None
 
     @property
     def origin(self) -> str:

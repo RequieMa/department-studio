@@ -46,6 +46,7 @@
           <div class="room-title-group"><span class="eyebrow">Shared conversation</span><h2 id="room-title">Project room</h2><p>Messages, requests and replies in one place.</p></div>
           <div class="room-heading-meta">
             <div id="recipient-context" class="recipient-context" aria-live="polite"><span>To</span><strong id="room-recipient">the room</strong></div>
+            <button id="tasks-toggle" class="activity-toggle" type="button" aria-expanded="false" aria-controls="tasks-panel">Ongoing tasks <span id="tasks-count" class="count">0</span></button>
             <button id="activity-toggle" class="activity-toggle" type="button" aria-expanded="false" aria-controls="activity-panel">Activity <span id="activity-count" class="activity-count" hidden>0</span></button>
             <span id="room-state" class="state-pill">Room paused</span>
           </div>
@@ -59,11 +60,12 @@
         </div>
         <div id="control-error" class="inline-error control-error" role="alert" hidden></div>
         <section id="activity-panel" class="activity-panel" aria-label="Run activity" hidden>
-          <div class="activity-heading"><div><strong>Run activity</strong><span id="activity-summary">No unread updates</span></div><button id="activity-mark-read" class="secondary compact" type="button" disabled>Mark all read</button></div>
+          <div class="activity-heading"><div><strong>Needs your attention</strong><span id="activity-summary">No decisions or actions requested.</span></div></div>
+          <div id="activity-error" class="inline-error" role="alert" hidden></div>
           <ul id="activity-list" class="activity-list"></ul>
-          <p id="activity-overflow" class="activity-overflow" hidden></p>
+          <button id="activity-more" class="secondary" type="button" hidden>Load more requests</button>
+          <p id="activity-receipt" class="task-receipt" role="status"></p>
         </section>
-        <div id="activity-toast" class="activity-toast" role="status" aria-live="polite" hidden></div>
         <div id="typing-indicator" class="typing-indicator" role="status" aria-live="polite" hidden>
           <span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
           <span id="typing-text"></span>
@@ -94,9 +96,63 @@
           </div>
         </form>
       </section>
+      <div id="tasks-dock" class="tasks-dock">
+        <aside id="tasks-panel" class="tasks-panel surface" aria-labelledby="tasks-title" hidden>
+          <header class="tasks-heading"><div><span class="eyebrow">Your work, in context</span><h2 id="tasks-title">Ongoing tasks</h2></div><button id="tasks-close" class="icon-button" type="button" aria-label="Collapse ongoing tasks">×</button></header>
+          <p class="tasks-intro">Tasks stay open until you close them. A finished run is not a finished task.</p>
+          <div id="tasks-error" class="inline-error" role="alert" hidden></div>
+          <div id="tasks-status" class="quiet-label" role="status"></div>
+          <div id="task-map-view">
+            <label class="task-filter-label">Show tasks<select id="tasks-filter"><option value="open">Open tasks</option><option value="all">All tasks</option></select></label>
+            <p id="tasks-empty" class="tasks-empty">Address a department in the room to create a task. Child tasks are created explicitly.</p>
+            <ol id="task-map" class="task-map" aria-label="Task branches"></ol>
+            <button id="tasks-more" class="secondary" type="button" hidden>Load more tasks</button>
+          </div>
+          <section id="task-detail" class="task-detail" aria-labelledby="task-detail-title" hidden>
+            <button id="task-back" class="secondary task-back" type="button">← Back to task map</button>
+            <p id="task-parent" class="eyebrow"></p>
+            <h3 id="task-detail-title" tabindex="-1"></h3>
+            <p id="task-owner" class="task-owner"></p>
+            <p id="task-lifecycle" class="task-lifecycle"></p>
+            <p id="task-execution" class="task-execution"></p>
+            <p id="task-context" class="task-context"></p>
+            <button id="task-source" class="text-action" type="button" hidden>View source in room</button>
+            <div class="task-actions"><button id="task-add-child" class="secondary" type="button">Create subtask</button><button id="task-lifecycle-action" class="secondary" type="button">Close task</button></div>
+            <p class="field-help">Closing a task does not stop work. Linked queued, running or stopping work must finish first.</p>
+            <div id="task-action-error" class="inline-error" role="alert" hidden></div>
+            <form id="task-child-form" class="task-child-form" hidden>
+              <h3>New subtask</h3>
+              <p id="task-child-parent" class="field-help"></p>
+              <label>Subtask title<input id="task-child-title" maxlength="120" required></label>
+              <label>Responsible department<select id="task-child-owner" required></select></label>
+              <label>Subtask context<textarea id="task-child-context" rows="3" maxlength="8000"></textarea></label>
+              <p class="field-help">Create task saves context only. It does not send an instruction or start work.</p>
+              <div class="task-actions"><button id="task-child-cancel" class="secondary" type="button">Cancel</button><button id="task-child-create" class="primary" type="submit">Create task</button></div>
+            </form>
+            <form id="task-instruction-form" class="task-instruction-form">
+              <label for="task-instruction">Instruction to responsible department</label>
+              <textarea id="task-instruction" rows="4" maxlength="32000" placeholder="Add context or a follow-up instruction…" required></textarea>
+              <p id="task-instruction-help" class="field-help"></p>
+              <p class="field-help">Public in the room and task history. Mentions here do not add recipients. Enter adds a line; Ctrl/⌘+Enter submits.</p>
+              <button id="task-instruction-send" class="primary" type="submit" disabled>Send instruction</button>
+              <div id="task-instruction-error" class="inline-error" role="alert" hidden></div>
+              <p id="task-instruction-receipt" class="task-receipt" role="status"></p>
+            </form>
+            <h3 class="task-history-heading">Instruction history</h3>
+            <ol id="task-instructions" class="task-history"></ol>
+            <h3 class="task-history-heading">Decision history</h3>
+            <ol id="task-decisions" class="task-history" aria-label="Decision history"></ol>
+            <p id="task-history-status" class="field-help"></p>
+            <button id="task-history-more" class="secondary" type="button" hidden>Load more context</button>
+            <details class="task-public-context"><summary>Linked public context</summary><div id="task-messages"></div></details>
+          </section>
+        </aside>
+      </div>
     </main>
-    <footer class="page-footer"><span>Local workspace · Pi runtime</span><span>You set the scope. Departments collaborate within it.</span></footer>
+    <footer class="page-footer"><span>Local workspace · configurable runtimes</span><span>You set the scope. Departments collaborate within it.</span></footer>
   </div>
+
+  <dialog id="tasks-drawer" class="tasks-drawer" aria-labelledby="tasks-title"></dialog>
 
   <dialog id="lead-dialog" aria-labelledby="dialog-title">
     <form id="lead-form">
@@ -117,9 +173,10 @@
         </div>
       </div>
       <p class="field-help">Choose an existing local directory. Its AGENTS.md instructions are included. A changed directory starts a fresh native conversation.</p>
-      <div class="model-heading"><span class="eyebrow">Runtime · Pi</span><button id="load-models" type="button" class="secondary compact">Load models</button></div>
-      <label>Model<select id="lead-model" name="model" aria-label="Model" required disabled><option value="">Choose a workspace, then load models</option></select></label>
-      <p id="model-help" class="field-help">Uses your existing Pi provider configuration. Listing a model does not verify its connection.</p>
+      <label>Agent runtime<select id="lead-runtime" name="runtime" aria-label="Agent runtime" required><option value="pi">Pi</option><option value="claude">Claude Code</option><option value="deepseek">DeepSeek Harness</option></select></label>
+      <div class="model-heading"><span class="eyebrow">Model catalog</span><button id="load-models" type="button" class="secondary compact">Load models</button></div>
+      <label>Model<select id="lead-model" name="model" aria-label="Model" required disabled><option value="">Loading configured models…</option></select></label>
+      <p id="model-help" class="field-help">Models come from Department Studio’s configured catalog. Listing a model does not verify its connection or spend.</p>
 
       <fieldset class="permissions"><legend>Tool access</legend>
         <div class="permission-options">

@@ -11,13 +11,19 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from department_studio.backends.base import AgentBackend
+from department_studio.backends.claude import ClaudeBackend
+from department_studio.backends.deepseek import DeepSeekBackend
 from department_studio.backends.pi import PiBackend
+from department_studio.backends.registry import RuntimeRegistry
 from department_studio.config import DataDirectory, Settings
-from department_studio.domain import Conflict, Invalid, LeadCreate, NotFound, workspace_path
+from department_studio.domain import Conflict, Invalid, LeadCreate, NotFound
 from department_studio.folders import browse_folders
+from department_studio.models import ModelCatalog, ModelCatalogError, load_catalog
 from department_studio.security import OwnerCredential, allowed_request
 from department_studio.service import RoomService
 from department_studio.store import Store
+from department_studio.task_api import router as task_router
+from department_studio.tasks import TaskConflict
 
 SECURITY_HEADERS = {
     "Cache-Control": "no-store",
@@ -42,7 +48,7 @@ class LeadBody(StrictBody):
     workspace: str = Field(max_length=4096)
     enabled: bool = True
     permission: Literal["discuss", "develop"] = "discuss"
-    backend_kind: Literal["pi"] = "pi"
+    backend_kind: Literal["pi", "claude", "deepseek"] = "pi"
 
 
 class LeadPatch(LeadBody):
@@ -65,9 +71,11 @@ def create_app(
     *,
     store: Store | None = None,
     backend: AgentBackend | None = None,
+    catalog: ModelCatalog | None = None,
     owner_token: str | None = None,
 ) -> FastAPI:
     owner = OwnerCredential(owner_token) if owner_token else OwnerCredential()
+    models = catalog or load_catalog(settings.models_config)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -81,9 +89,21 @@ def create_app(
                         max_chain_deliveries=settings.max_chain_deliveries,
                     )
                 )
-            service = RoomService(active_store, backend or PiBackend(settings), settings)
+            registry = (
+                RuntimeRegistry.single(backend)
+                if backend is not None
+                else RuntimeRegistry(
+                    {
+                        "pi": PiBackend(settings, models),
+                        "claude": ClaudeBackend(settings, models),
+                        "deepseek": DeepSeekBackend(settings, models),
+                    }
+                )
+            )
+            service = RoomService(active_store, registry, settings, models)
             app.state.store = active_store
             app.state.service = service
+            app.state.catalog = models
             await service.start()
             try:
                 yield
@@ -96,6 +116,7 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.owner = owner
+    app.include_router(task_router)
 
     @app.middleware("http")
     async def local_access(request: Request, call_next):
@@ -138,11 +159,18 @@ def create_app(
 
     @app.exception_handler(Conflict)
     async def conflict_handler(request, exc):
-        return JSONResponse({"detail": str(exc)}, status_code=409)
+        content = {"detail": str(exc)}
+        if isinstance(exc, TaskConflict):
+            content["code"] = exc.code
+        return JSONResponse(content, status_code=409)
 
     @app.exception_handler(NotFound)
     async def missing_handler(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=404)
+
+    @app.exception_handler(ModelCatalogError)
+    async def model_catalog_handler(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request, exc):
@@ -167,19 +195,16 @@ def create_app(
         return browse_folders(path)
 
     @app.get("/api/models")
-    async def models(workspace: str):
-        directory = Path(workspace_path(workspace))
-        try:
-            options = await app.state.service.backend.list_models(directory)
-        except Exception:
-            return JSONResponse(
-                {
-                    "detail": "Pi model listing failed. Check the local Pi configuration "
-                    "and provider authentication."
-                },
-                status_code=503,
-            )
-        return {"models": [asdict(option) for option in options]}
+    async def model_options(runtime: str | None = Query(default=None, max_length=32)):
+        options = models.options(runtime)
+        return {
+            "models": [asdict(option) for option in options],
+            "runtimes": [asdict(info) for info in app.state.service.backend.runtimes()],
+        }
+
+    @app.get("/api/runtimes")
+    async def runtime_options():
+        return {"runtimes": [asdict(info) for info in app.state.service.backend.runtimes()]}
 
     @app.post("/api/leads", status_code=201)
     async def create_lead(body: LeadBody):
@@ -240,6 +265,10 @@ def create_app(
     @app.get("/app.js")
     async def javascript():
         return FileResponse(static / "app.js", media_type="text/javascript")
+
+    @app.get("/tasks.js")
+    async def tasks_javascript():
+        return FileResponse(static / "tasks.js", media_type="text/javascript")
 
     @app.get("/style.css")
     async def stylesheet():

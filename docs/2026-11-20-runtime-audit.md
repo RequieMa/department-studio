@@ -93,7 +93,7 @@ Frontend has **15 failed deliveries: ten acknowledgement timeouts and five gener
 Pi failures**. It also has six earlier completed deliveries, so this is not evidence
 that the provider never worked.
 
-At inspection, frontend selected `qgenie / azure::gpt-5.6-luna`, with workspace
+At inspection, frontend selected an external Pi provider/model, with workspace
 `/home/zengma/department-studio/frontend`. Its retained conversation has used four
 model IDs over time. Model changes preserve native history in this application, so
 changing the selected model alone did not clear the accumulated conversation.
@@ -171,9 +171,9 @@ full 50-message snapshot. The current input and originating human request remain
 complete. Compaction and fresh-context fallback never replay a previous request.
 
 Back up the actual persistent data directory with Studio stopped, then relaunch the
-root source with the same current data path and existing provider configuration.
-The updated server migrates the database to schema v2; keep the backup if you need
-to revert to older source that only supports v1.
+root source with the same current data path and the configured model catalog/runtime setup.
+The updated server migrates the database to schema v3; keep the backup if you need
+to revert to older source.
 
 ```bash
 cd /home/zengma/department-studio

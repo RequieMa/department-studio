@@ -2,6 +2,8 @@
 
 Research date: 2026-11-19.
 Status: findings and proposed architecture; not an approved implementation specification.
+Implementation note (2026-11-21): the runtime-neutral contract, Pi/Claude Code/DeepSeek
+Harness adapters and shared MCP room bridge are now implemented. A2A remains deferred.
 
 ## Recommendation
 
@@ -169,4 +171,4 @@ Before claiming A2A interoperability, additionally test the selected wire versio
 6. [Authentication and authorization](https://github.com/a2aproject/A2A/blob/v1.0.1/docs/specification.md#7-authentication-and-authorization).
 7. [Normative Agent Card and capability model](https://github.com/a2aproject/A2A/blob/v1.0.1/specification/a2a.proto#L361-L452).
 8. [Official Python SDK release inspected](https://github.com/a2aproject/a2a-python/releases/tag/v1.3.1), not installed or validated.
-9. Installed Pi documentation under `/home/zengma/.local/share/qgenie-cli/pi-cli/.npm-global/bin/`: `docs/sdk.md`, `docs/cli-integration.md`, `docs/rpc.md`, `docs/rpc-commands.md`, `examples/sdk/02-custom-model.ts`, and `examples/sdk/11-sessions.ts`.
+9. Installed Pi documentation under the installed Pi package: `docs/sdk.md`, `docs/cli-integration.md`, `docs/rpc.md`, `docs/rpc-commands.md`, `examples/sdk/02-custom-model.ts`, and `examples/sdk/11-sessions.ts`.

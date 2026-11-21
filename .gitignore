@@ -29,3 +29,7 @@ test-results/
 
 # Optional isolated implementation worktrees
 .worktrees/
+
+# Local uv/Playwright caches created by constrained verification environments
+.uv-cache/
+.pw-browsers/

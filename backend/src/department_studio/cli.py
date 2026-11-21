@@ -20,6 +20,21 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--pi-executable", default="pi", help="Installed Pi executable name or path"
     )
+    result.add_argument(
+        "--claude-executable", default="claude", help="Installed Claude Code executable"
+    )
+    result.add_argument(
+        "--deepseek-executable", default="dsh", help="Installed DeepSeek Harness executable"
+    )
+    result.add_argument(
+        "--deepseek-profile", default="headless", help="DeepSeek Harness profile to boot"
+    )
+    result.add_argument(
+        "--models-config",
+        type=Path,
+        default=None,
+        help="OpenAI-compatible model catalog TOML (default: bundled DeepSeek catalog)",
+    )
     return result
 
 

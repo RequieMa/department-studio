@@ -1,115 +1,79 @@
-# Live Pi collaboration demo
+# Live collaboration demo
 
-For the existing November 20 room and frontend failures, use the
-[runtime audit and recovery instructions](2026-11-20-runtime-audit.md). That room uses
-the root `live-demo/` directory. The bootstrap data path below belongs to the earlier,
-separate demonstration and is retained as historical preparation guidance. That
-checkout was archived and removed on November 20; follow the
-[bootstrap restore instructions](root-integration.md) before using its historical paths.
+This guide prepares a real, user-directed conversation through Department Studio.
+It does not create departments, select models or run inference automatically.
+Choose two departments, their runtimes, exact models and workspaces in the UI.
 
-The root application now performs [context maintenance on Resume](resume-context.md).
-Restart the root server to load it, click **Resume room**, wait for **Room running**,
-then send a new request. Resume may use the selected models to compact existing
-history; unrecoverable context is replaced while old conversations and files remain.
+The current code has a Studio-owned model catalog and Pi/Claude Code/DeepSeek
+Harness adapters. The new Claude Code and DeepSeek Harness adapters have only been
+tested against fixture processes; this guide is the acceptance path for a live run.
+No live inference or restart of a persistent room was performed while implementing
+the adapters. See [runtime abstraction](runtime-abstraction.md) for the contract and
+[verification](verification.md) for the automated evidence.
 
-This guide prepares a real, user-directed conversation about Department Studio.
-It does not run inference or create departments automatically. Choose the two
-department names, handles, roles, models and workspaces in the UI. Keep both in
-**Discuss** for this demonstration.
+## Before you start
 
-## Preparation status — November 19, 2026
+1. Install at least one runtime executable: `pi`, `claude` or `dsh`.
+2. Export the API key named by the catalog. The bundled catalog uses
+   `DEEPSEEK_API_KEY` for DeepSeek V4 Flash and V4 Pro.
+3. Stop any previously running Studio process that uses the same data directory.
+4. Back up the entire private data directory and native sessions. Schema v3 is
+   additive, but there is no downgrade procedure.
 
-The production application was checked from `.worktrees/bootstrap` using a
-separate, private `.department-studio/live-demo` data directory. Its authenticated
-state endpoint returned an empty, paused room. Browser verification confirmed
-launch-token setup, Discuss as the default, and model loading without sending any
-messages or creating departments. The temporary server was then stopped, freeing
-port 8765 for the user's terminal.
-
-**QGenie is already configured.** Both inspected Pi settings files select
-`qgenie / azure::gpt-6-luna` as their saved default. The richer model catalog is in
-`/home/zengma/.pi/agent`; the QGenie launcher otherwise defaults to its separate
-installation-local agent directory.
-
-The empty RPC model list inside this coding session was traced to a configuration
-failure: Pi reported `EROFS` while creating its `settings.json` lock. Both agent
-directories are mounted read-only here, and Pi returned a placeholder model. This
-does not show that QGenie is missing or that its credentials need replacing. Start
-the demo in your normal terminal, where Pi can use its existing configuration.
-No model prompt was sent, and provider credentials were not displayed or changed.
-
-The implementation's automated results and missing independent reviews are
-recorded in `verification.md`. Preparing this demo does not complete those reviews
-or establish that provider inference works.
-
-## Start or reopen the demo
-
-Run the following in your normal terminal. The explicit agent directory selects
-the existing QGenie configuration inspected during preparation:
+Example:
 
 ```bash
-cd /home/zengma/department-studio/.worktrees/bootstrap
+cd /home/zengma/department-studio
+export DEEPSEEK_API_KEY=...   # never commit or paste this into the room
 uv sync --locked
-PI_CODING_AGENT_DIR=/home/zengma/.pi/agent \
-  uv run --locked department-studio --data-dir .department-studio/live-demo
+uv run department-studio \
+  --data-dir /home/zengma/department-studio/live-demo \
+  --models-config /path/to/models.toml   # optional; omit for the bundled catalog
 ```
 
-Open the printed URL, including its fragment. Each server restart generates a new
-launch credential. The room starts paused and restores existing configuration and
-messages; it never replays interrupted work. The demo data is git-ignored. Keep
-launch credentials and native sessions out of this document and source control.
+Open the printed URL, including its `#token=...` fragment. Each restart generates
+a new launch credential. The room starts paused and restores configuration and
+messages; it never replays interrupted work.
 
-## Load the existing QGenie models
-
-In Studio, click **Add department**, select a workspace with **Browse folders**,
-choose **Use this folder**, and click
-**Load models**. Listing is a metadata request, not a model prompt. Choose the
-exact provider/model you want; the saved TUI default is useful context, not an
-automatic choice for either department. A live request still needs your model
-selections and authorization.
-
-If the list remains empty in your terminal, first confirm that Pi and Studio use
-the same `PI_CODING_AGENT_DIR` and that Pi can create its configuration locks there.
-Do not replace credentials based only on an empty model list. If authentication
-uses environment variables, start Studio from the terminal with those variables
-set so its child processes inherit them.
-
-Only models available under the bootstrap's resource policy can appear.
-Auto-loaded provider extensions are disabled. Do not enable arbitrary extensions
-to make this check pass. A listed model can still fail during inference; the room
-must show that failure without substituting a different model.
+The bundled catalog is `backend/src/department_studio/default_models.toml`. A custom
+catalog must use `api = "openai-completions"`; see the
+[schema](runtime-abstraction.md#model-catalog). Keys belong in the environment, not
+in the file. The browser never receives them.
 
 ## Configure the two departments
 
-For each department, enter your own name, unique handle, role and exact model.
-Choose the workspace with **Browse folders**, select **Discuss**, and save. Both leads may use
-`/home/zengma/department-studio/.worktrees/bootstrap` to discuss the implemented
-project, or another existing workspace you explicitly choose. Select separate
-workspaces before any later concurrent editing.
+For each department:
 
-Keep the room paused while configuring. No department has been pre-created and
-no model is selected automatically. Roles are independent of names. There is no
-need to enable Develop for this demonstration.
+1. Click **Add department** and enter your own name, handle and role.
+2. Choose an existing workspace with **Browse folders** and **Use this folder**.
+3. Choose the **Agent runtime**. The dialog reports a runtime that is not installed;
+   it does not silently substitute another one.
+4. Click **Load models** and choose an exact model. Listing reads the catalog only;
+   it does not contact a provider or start a runtime.
+5. Keep **Discuss** for this demonstration. Do not enable Develop.
+6. Save both departments while the room is paused.
+
+There is no default department, runtime or model. A saved model that is no longer
+in the catalog is shown as missing and must be replaced before saving or running.
+This is the fail-closed behavior that replaced the former external provider
+selection.
 
 ## Send one explicit collaboration request
 
-For a fuller example with an opening note, a peer handoff, illustrative replies
-and a summary back to the human, see the [sample conversation](sample-conversation.md).
+Sending the following request starts live inference with the selected runtimes and
+models. If an assistant is operating the demo for you, explicitly authorize that
+bounded live request after confirming the departments and models.
 
-Sending the following request starts live inference with the models you selected.
-If an assistant is operating the demo for you, explicitly authorize that bounded
-live request after confirming the selected departments and models.
-
-1. Click **Resume room**.
-2. Send an ordinary note such as `We are checking the Department Studio bootstrap.`
-   It should appear in the transcript with no new delivery.
-3. Replace `FIRST_HANDLE` and `SECOND_HANDLE` below with your chosen handles. Use
-   the second handle **without an @ prefix** inside the recipient array. Confirm
-   that the composer preview names only the first department before sending.
+1. Click **Resume room** and wait for **Room running**. For Pi, Resume may compact
+   large history; Claude Code and DeepSeek Harness own their native compaction.
+2. Send an ordinary note such as `We are checking the Department Studio room.`
+   It should appear with no new delivery.
+3. Replace `FIRST_HANDLE` and `SECOND_HANDLE` below with your handles. Use the
+   second handle without `@` inside the recipient array.
 
 ```text
 @FIRST_HANDLE We are demonstrating real department-to-department communication
-about Department Studio. Use send_room_message exactly once with recipients
+about Department Studio. Use the room message tool exactly once with recipients
 ["SECOND_HANDLE"]. Ask that department for one observable acceptance check proving
 that renaming a department preserves its identity and historical attribution.
 Ask it to answer in its public final response, under 120 words, without forwarding
@@ -118,44 +82,46 @@ asked; do not wait synchronously for the other department. Use only the room
 message tool for this request. Do not edit files or run shell commands.
 ```
 
-The intended result is two deliveries: the initial human-to-lead request, then
-the tool-addressed peer request. The application's enforced allowance remains
-eight deliveries per human chain, with at most two active leads and a five-minute
-deadline per run. The instruction to send once is not a separate hard spending
+The room message tool is `send_room_message` for Pi and
+`mcp__room__send_room_message` for Claude Code and DeepSeek Harness. The operating
+instructions name the correct tool for the selected runtime. The enforced allowance
+remains eight deliveries per human chain, at most two active leads and a five-minute
+deadline per run. The "exactly once" instruction is not a separate hard spending
 limit. Use **Pause & stop** if the conversation diverges.
 
-## Observe and record the result
+## Observe and record
 
 - The first human message is addressed only to the first department.
-- A public message from that lead addresses the second department. Its sender
-  label must be the authenticated lead, not a claimed human identity.
-- The second lead produces a real final response. Final text does not start
-  further work, even if it mentions handles.
-- The two delivery records share a human-request chain and have different lead
-  IDs and native conversations. Check the local authenticated state/session
-  records if collecting technical evidence; keep raw native transcripts private.
+- A public message from that lead addresses the second department. Its sender label
+  is the authenticated lead, not a claimed human identity.
+- The second lead produces a real final response. Final text does not route work.
+- The two deliveries share a human-request chain and have different lead IDs and
+  native conversations.
 - Both deliveries complete successfully. An error, timeout or empty answer is
-  evidence to investigate, not a successful live demonstration.
-- Reloading the tab retains the attributed transcript and configuration.
+  evidence to investigate, not a successful demonstration.
+- Reloading the tab retains the transcript and configuration.
 
 After both deliveries finish, pause the room. A full acceptance run also needs an
-explicitly authorized pause during active work, confirmed stop, and service
-restart/recovery check; follow `verification.md`. Do not claim those checks from
-an idle pause. Keep Develop disabled until the independent reviews and the
-separate, user-directed self-development preparation are complete.
-
-Record only what was observed:
+explicitly authorized pause during active work, confirmed stop, and a
+service-restart/recovery check. Do not claim those from an idle pause.
 
 | Evidence | Result |
 |---|---|
-| Authenticated empty, paused production room | Passed during preparation |
-| Existing QGenie configuration | Present; saved default `qgenie / azure::gpt-6-luna` |
-| Pi metadata listing in this coding session | HTTP 200 with an empty list; Pi configuration lock failed with `EROFS` |
-| Pi metadata listing from the user's normal terminal | Pending |
-| User-selected departments and exact models | Pending |
+| Catalog contains DeepSeek V4 Flash and V4 Pro | Automated test passed |
+| Claude Code / DeepSeek Harness adapter behavior | Fixture tests passed |
+| Runtime executable and credential readiness on this machine | Pending |
+| User-selected departments, runtimes and exact models | Pending |
 | Explicit live request authorization | Pending |
-| Real addressed peer post and public response | Pending |
+| Real addressed peer post and public response | Pending live verification |
 | Distinct native conversations and shared chain | Pending live verification |
 | Pause during active work and confirmed stop | Pending live verification |
 | Service restart and no replay | Pending live verification |
 | Independent spec and code-quality reviews | Still outstanding |
+
+## Historical rooms
+
+For the November 20 room and its context/recovery evidence, see the
+[runtime audit](2026-11-20-runtime-audit.md). That room selected a provider through
+an external Pi configuration; the current build no longer reads that provider list.
+A department still referencing it remains readable but fails closed with a
+"not configured" delivery error until the user chooses a catalog model.

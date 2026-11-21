@@ -9,6 +9,7 @@ import uvicorn
 
 from department_studio.api import create_app
 from department_studio.config import Settings
+from tests.catalog import TEST_CATALOG
 from tests.fakes import AutomaticBackend, ControlledBackend
 
 
@@ -33,6 +34,7 @@ if __name__ == "__main__":
                 stop_timeout_seconds=0.5,
             ),
             backend=BrowserBackend(),
+            catalog=TEST_CATALOG,
             owner_token="browser-test-owner",
         )
         uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False, log_level="warning")

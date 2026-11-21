@@ -9,6 +9,7 @@ import pytest
 from department_studio.api import create_app
 from department_studio.config import Settings
 from department_studio.domain import LeadCreate
+from tests.catalog import TEST_CATALOG
 from tests.fakes import ControlledBackend, until
 
 OWNER = "test-owner-credential"
@@ -18,7 +19,9 @@ OWNER = "test-owner-credential"
 async def http_app(store, tmp_path):
     settings = Settings(pi_executable="/bin/true", data_dir=tmp_path, stop_timeout_seconds=0.1)
     backend = ControlledBackend()
-    app = create_app(settings, store=store, backend=backend, owner_token=OWNER)
+    app = create_app(
+        settings, store=store, backend=backend, catalog=TEST_CATALOG, owner_token=OWNER
+    )
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
@@ -63,12 +66,24 @@ async def test_first_run_empty_paused_and_user_configuration_persists(http_app, 
     assert updated.json()["conversation_id"] == lead["conversation_id"]
     assert app.state.store.get_lead(lead["id"]).handle == "forge"
     models = (await client.get("/api/models", params={"workspace": str(tmp_path)})).json()
-    assert models == {
-        "models": [
-            {"provider": "test", "id": "model-a", "name": "Synthetic A"},
-            {"provider": "test", "id": "model-b", "name": "Synthetic B"},
-        ]
+    assert [item["id"] for item in models["models"]] == [
+        "model-a",
+        "model-b",
+        "model-c",
+        "model-d",
+        "fixture",
+    ]
+    assert models["models"][0] == {
+        "provider": "test",
+        "id": "model-a",
+        "name": "Synthetic A",
+        "provider_name": "Synthetic",
+        "context_window": 128000,
+        "runtimes": ["pi", "claude", "deepseek"],
+        "credential_env": None,
+        "credential_ready": True,
     }
+    assert {item["kind"] for item in models["runtimes"]} == {"pi", "claude", "deepseek"}
 
 
 @pytest.mark.parametrize(
@@ -76,6 +91,7 @@ async def test_first_run_empty_paused_and_user_configuration_persists(http_app, 
     [
         ("GET", "/api/state", None),
         ("GET", "/api/models", None),
+        ("GET", "/api/runtimes", None),
         ("GET", "/api/folders", None),
         ("POST", "/api/leads", {}),
         ("PATCH", "/api/leads/missing", {}),
@@ -179,17 +195,24 @@ async def test_validation_revision_busy_errors_and_safe_invalid_json(http_app, t
     ).status_code == 409
 
 
-async def test_model_failure_is_sanitized_and_disappeared_workspace_is_invalid(http_app, tmp_path):
+async def test_models_come_from_the_catalog_and_unknown_runtimes_are_rejected(http_app, tmp_path):
     client, _, backend = http_app
-
-    async def broken(workspace):
-        raise RuntimeError("provider header secret-value")
-
-    backend.list_models = broken
     result = await client.get("/api/models", params={"workspace": str(tmp_path)})
-    assert result.status_code == 503 and "secret-value" not in result.text
-    result = await client.get("/api/models", params={"workspace": str(tmp_path / "missing")})
-    assert result.status_code == 422
+    assert result.status_code == 200
+    assert "secret-value" not in result.text
+    assert {model["id"] for model in result.json()["models"]} >= {"model-a", "model-b"}
+    unknown = await client.get("/api/models", params={"runtime": "unknown"})
+    assert unknown.status_code == 422 and "Unknown agent runtime" in unknown.text
+    runtimes = await client.get("/api/runtimes")
+    assert runtimes.status_code == 200
+    assert {item["kind"] for item in runtimes.json()["runtimes"]} == {
+        "pi",
+        "claude",
+        "deepseek",
+    }
+    # Listing never starts a runtime or asks a runtime for its own catalog.
+    assert not backend.requests
+    assert not getattr(backend, "closed", False)
 
 
 async def test_folder_browser_lists_only_directories_without_starting_a_runtime(
@@ -282,3 +305,58 @@ async def test_new_owner_token_and_paused_recovery_after_application_restart(tmp
         assert second.state.store.paused
         assert asdict(second.state.store.list_leads()[0])["id"] == lead.id
         assert second.state.store.list_messages()[0].sender_name == "星图 Studio"
+
+
+async def test_unconfigured_legacy_model_fails_before_the_runtime_is_started(http_app, tmp_path):
+    client, app, backend = http_app
+    body = lead_body(tmp_path, provider="legacy-provider", model_id="legacy-model")
+    assert (await client.post("/api/leads", json=body)).status_code == 201
+    assert (await client.post("/api/room/resume")).status_code == 200
+    await until(lambda: not app.state.store.paused)
+    receipt = (await client.post("/api/messages", json={"text": "@atlas continue"})).json()
+    assert receipt["recipient_ids"]
+    await until(
+        lambda: any(delivery.state == "failed" for delivery in app.state.store.list_deliveries())
+    )
+    failed = app.state.store.list_deliveries()[0]
+    assert "not configured" in (failed.error or "")
+    assert not backend.requests
+
+
+async def test_department_runtime_selection_persists_and_rejects_unknown_values(http_app, tmp_path):
+    client, app, _ = http_app
+    response = await client.post(
+        "/api/leads", json=lead_body(tmp_path, backend_kind="claude", handle="claude-lead")
+    )
+    assert response.status_code == 201
+    assert response.json()["backend_kind"] == "claude"
+    assert app.state.store.get_lead(response.json()["id"]).backend_kind == "claude"
+    invalid = await client.post(
+        "/api/leads", json=lead_body(tmp_path, backend_kind="other", handle="other-lead")
+    )
+    assert invalid.status_code == 422
+    assert "other" not in invalid.text
+
+
+async def test_runtime_availability_is_reported_without_starting_a_process(store, tmp_path):
+    from department_studio.config import Settings
+
+    settings = Settings(
+        pi_executable="/missing/pi",
+        claude_executable="/missing/claude",
+        deepseek_executable="/missing/dsh",
+        data_dir=tmp_path,
+        stop_timeout_seconds=0.1,
+    )
+    app = create_app(settings, store=store, catalog=TEST_CATALOG, owner_token=OWNER)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url=settings.origin,
+            headers={"Authorization": f"Bearer {OWNER}"},
+        ) as client:
+            response = await client.get("/api/runtimes")
+            assert response.status_code == 200
+            infos = {item["kind"]: item for item in response.json()["runtimes"]}
+            assert all(item["available"] is False for item in infos.values())
+            assert infos["claude"]["capabilities"]["room_bridge"] is True

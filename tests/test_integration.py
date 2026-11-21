@@ -9,6 +9,7 @@ from department_studio.api import create_app
 from department_studio.backends.pi import PiBackend
 from department_studio.config import Settings
 from department_studio.service import RoomService
+from tests.catalog import TEST_CATALOG
 from tests.factories import create_lead
 from tests.fakes import until
 from tests.test_rpc import FAKE_PI
@@ -31,6 +32,7 @@ async def test_overflow_resume_then_new_request_uses_fresh_native_conversation(s
     trace = tmp_path / "trace.jsonl"
     backend = PiBackend(
         settings,
+        TEST_CATALOG,
         command_prefix=FAKE_PI,
         extra_env={
             "FAKE_PI_MODE": "context_overflow",
@@ -74,6 +76,7 @@ async def test_service_pause_confirms_fake_pi_exit_and_releases_adapter_state(st
     settings = Settings(pi_executable="/bin/true", data_dir=tmp_path, stop_timeout_seconds=0.6)
     backend = PiBackend(
         settings,
+        TEST_CATALOG,
         command_prefix=FAKE_PI,
         extra_env={"FAKE_PI_MODE": "hang", "FAKE_PI_TRACE": str(trace)},
     )
@@ -104,8 +107,16 @@ async def test_fake_pi_through_real_http_bridge_addresses_second_department(stor
         settings = Settings(
             pi_executable="/bin/true", port=port, data_dir=tmp_path, stop_timeout_seconds=0.6
         )
-        backend = PiBackend(settings, command_prefix=FAKE_PI, extra_env={"FAKE_PI_MODE": "bridge"})
-        app = create_app(settings, store=store, backend=backend, owner_token="integration-owner")
+        backend = PiBackend(
+            settings, TEST_CATALOG, command_prefix=FAKE_PI, extra_env={"FAKE_PI_MODE": "bridge"}
+        )
+        app = create_app(
+            settings,
+            store=store,
+            backend=backend,
+            catalog=TEST_CATALOG,
+            owner_token="integration-owner",
+        )
         server = uvicorn.Server(
             uvicorn.Config(
                 app, lifespan="on", log_level="error", access_log=False, proxy_headers=False
@@ -154,8 +165,9 @@ async def test_fake_pi_through_real_http_bridge_addresses_second_department(stor
             settings,
             store=store,
             backend=PiBackend(
-                settings, command_prefix=FAKE_PI, extra_env={"FAKE_PI_MODE": "bridge"}
+                settings, TEST_CATALOG, command_prefix=FAKE_PI, extra_env={"FAKE_PI_MODE": "bridge"}
             ),
+            catalog=TEST_CATALOG,
         )
         async with restarted.router.lifespan_context(restarted):
             assert store.paused
@@ -164,4 +176,4 @@ async def test_fake_pi_through_real_http_bridge_addresses_second_department(stor
             restarted.state.service.resume()
             await until(lambda: not store.paused)
             assert len(store.list_deliveries()) == 2
-            assert not restarted.state.service.backend._runs
+            assert not restarted.state.service.backend.backend_for("pi")._runs
