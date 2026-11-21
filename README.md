@@ -4,7 +4,7 @@ A local shared room where **you are the project lead**. Create your own departme
 
 This is the communication bootstrap described in `docs/superpowers/specs/2026-11-19-bootstrap-design.md`, extended with runtime-neutral adapters and a Studio-owned model catalog. It has a Python core, Pi/Claude Code/DeepSeek Harness adapters, SQLite persistence, and a browser interface without a frontend build step. It also includes a persistent Ongoing tasks map with human-created branches and owner-targeted instructions. A2A, worker fleets and task ownership transfer remain deferred.
 
-**Live model-backed collaboration has not been demonstrated with the new adapters.** Automated replies are explicitly synthetic test fixtures. Pi RPC behavior was previously checked against an installed Pi; Claude Code and DeepSeek Harness adapters are verified only against deterministic fixture processes. See `docs/runtime-abstraction.md` and `docs/verification.md` for the contract, evidence and remaining live checks.
+**Live model-backed collaboration has not been demonstrated with the new adapters.** Automated replies are explicitly synthetic test fixtures. A bounded live attempt on 2026-11-21 was blocked by a read-only Pi config directory, an invalid DeepSeek key (HTTP 401), and a Claude Code smoke run that did not finish; no success is claimed. See `docs/runtime-abstraction.md`, `docs/verification.md` and the [documentation status matrix](docs/documentation-status.md) for the contract, evidence and remaining checks.
 
 For the prepared two-department live demonstration, follow `docs/live-demo.md`.
 It covers provider readiness, user-chosen setup, the explicit peer-request prompt,
@@ -36,7 +36,7 @@ Use the exact printed address: other Host headers and browser origins are reject
 
 ## Source layout
 
-- `backend/src/department_studio/`: HTTP API, domain/storage, scheduling and runtime adapters. The Pi bridge is backend integration code, not browser code.
+- `backend/src/department_studio/`: HTTP API, project catalog/lifecycle, SQLite domain/storage, scheduling, model catalog, records, hierarchy, and Pi/Claude Code/DeepSeek Harness adapters. The Pi extension and MCP bridge are backend integration code, not browser code.
 - `frontend/`: browser HTML, JavaScript and CSS; communicates through `/api/` only. No frontend build step is required.
 - `tests/`: backend, bridge, packaging and browser integration tests.
 - `pyproject.toml` and `uv.lock`: shared root Python tooling; no second environment is needed under `backend/`.

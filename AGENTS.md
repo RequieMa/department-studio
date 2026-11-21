@@ -45,4 +45,4 @@ This is a user requirement, not an optional preference.
 
 ## Current phase
 
-The bootstrap design is approved and implemented, with the later runtime/catalog extension described in `docs/runtime-abstraction.md`. Pi, Claude Code and DeepSeek Harness adapters exist; A2A is deferred. Use deterministic backends and subprocess fixtures for automated tests. Live model calls require user-selected models and explicit authorization; do not launch unrestricted agents.
+The bootstrap design is approved and implemented, with the later runtime/catalog extension and project/records/hierarchy/addressing/theme features. Pi, Claude Code and DeepSeek Harness adapters exist behind the runtime-neutral contract. A2A and the progress watchdog remain deferred; full worker/ownership transfer is not implemented. Automated tests use deterministic backends and subprocess fixtures. Live model calls require user-selected models and explicit authorization; a 2026-11-21 bounded attempt was blocked by Pi config permissions, an invalid DeepSeek key, and a Claude smoke timeout, so live acceptance remains outstanding. Current document/plan status: `docs/documentation-status.md`.

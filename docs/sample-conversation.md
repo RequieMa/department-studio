@@ -4,10 +4,12 @@ Use this short discussion to demonstrate a real lead-to-lead handoff in
 Department Studio. The replies below are **illustrative examples, not a recorded
 live conversation**. Your configured models will produce their own responses.
 
-Create two departments with your own names, handles, roles and models. Choose
-each workspace with **Browse folders**, keep both leads in **Discuss**, then
-resume the room. Replace `FIRST_HANDLE` and `SECOND_HANDLE` with their actual
-handles before sending the prompts below. No departments are built into the app.
+Create or switch to a separate project, then create two departments with your
+own names, handles, roles and models. Choose each workspace with **Browse folders**,
+keep both leads in **Discuss**, then resume the room. Replace `FIRST_HANDLE` and
+`SECOND_HANDLE` with their actual handles before sending the prompts below. No
+departments are built into the app. Durable conclusions belong in the project
+**Records** folder; the chat below stays deliberately short.
 
 ## 1. Share context without starting work
 
@@ -27,7 +29,7 @@ department**; use the second handle without an `@` inside the recipient list.
 
 ```text
 @FIRST_HANDLE Propose one small improvement to Department Studio's first-run
-setup, drawing on your department's role. Use send_room_message exactly once
+setup, drawing on your department's role. Use the room message tool exactly once
 with recipients ["SECOND_HANDLE"] to ask for one concern and one practical
 acceptance check. Tell that department to reply publicly, without forwarding
 the request or changing files. Then briefly state your proposal in your final
@@ -69,8 +71,11 @@ A possible answer is:
 > - Check: an empty folder can be chosen, and Cancel preserves the prior selection.
 > - Decision: confirm whether this behavior meets your setup needs.
 
-You remain the project lead. Finish with an unaddressed note such as
+You remain the project lead. To finish with a public note, first tick
+**Don’t continue the previous addressees** and send
 `Thanks. I will review this before choosing the next task.`, then pause the room.
+Without that opt-out, an unaddressed message continues with the last explicit
+addressee by design.
 
 The first addressed request intends two deliveries; the summary is a separate
 human request. The application's eight-delivery allowance still applies to each

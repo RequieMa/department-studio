@@ -1,7 +1,10 @@
 # Deferred: department progress watchdog
 
 Status: design direction recorded at the human's request (2026-11-20); implementation
-explicitly postponed. Finish Ongoing tasks and actionable-only Activity first.
+explicitly postponed. Ongoing tasks and actionable-only Activity were implemented and
+merged, and project rooms now isolate those records. The watchdog itself remains
+unimplemented and requires a separate human review because it would change the
+current 300-second run deadline and cancellation policy.
 
 ## Problem and desired behavior
 

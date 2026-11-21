@@ -1,6 +1,7 @@
 # Department Studio — project brief
 
-Status: bootstrap design approved, including user-defined department names; implementation plan ready for execution handoff.
+Status: **historical brief; implementation completed beyond the original bootstrap scope.**
+Current status and verification: [documentation and plan status](docs/documentation-status.md).
 Working name: Department Studio.
 
 ## Goal
@@ -22,8 +23,9 @@ Give an individual a shared workspace with persistent AI departments: the visibl
 - First enable real communication between different department leads.
 - Provide a UI to configure each lead's model and workspace/repository, alongside its identity and department role.
 - All project Python code, environments, dependencies and development commands must be managed through `uv` only. See `AGENTS.md`.
-- Pi is the first agent runtime. The architecture must support other agent runtimes later through an abstraction rather than coupling department identity or room behavior to Pi.
-- Approved integration boundary: runtime-neutral core with a native Pi RPC adapter first; defer A2A client/server interoperability to a later increment.
+- Pi was the first agent runtime. The architecture now supports Pi, Claude Code and DeepSeek Harness through the runtime-neutral contract; A2A client/server interoperability remains deferred.
+- Studio owns a configurable OpenAI-compatible model catalog rather than reading a runtime's provider list.
+- Later increments added isolated project rooms, durable Markdown records, a per-project department hierarchy, default addressee continuation, peer-message folding and light/dark themes.
 
 ## Development sequence
 
@@ -44,8 +46,9 @@ This sequence does not introduce an AI project boss. Message delivery and execut
 
 - Approved scope and acceptance criteria: `docs/superpowers/specs/2026-11-19-bootstrap-design.md`.
 - Protocol rationale: `docs/research/a2a-and-runtime-adapters.md`.
-- Runtime-neutral core, Pi RPC first, and A2A deferred.
-- Existing Pi model configuration; local Python/static-UI application; explicit mentions and Discuss-first permissions.
+- Runtime-neutral core, Pi first and later Claude Code/DeepSeek Harness adapters; A2A deferred.
+- Studio-owned model catalog; local Python/static-UI application; explicit mentions and Discuss-first permissions.
+- Current feature contracts: `docs/runtime-abstraction.md` and `docs/projects-records-hierarchy.md`.
 - The user will choose actual department names, models and workspace paths in the UI. No model or department is silently preselected for live execution.
 - Full task ownership and multi-repository automation follow the communication bootstrap.
 - Implementation plan: `docs/superpowers/plans/2026-11-19-bootstrap-implementation.md`.
@@ -59,8 +62,16 @@ This sequence does not introduce an AI project boss. Message delivery and execut
 - [x] Compare integration approaches; user approved Pi RPC behind a runtime-neutral core, with A2A deferred.
 - [x] Present the POC design and obtain approval, including custom department naming.
 - [x] Write and review a proposed bootstrap specification; clarify timeout safety and Develop-mode authority.
-- [x] Obtain review of the written specification before implementation.
+- [x] Obtain user approval of the written specification before implementation; independent spec review remains outstanding.
 - [x] Prepare and self-review the implementation and verification plan.
-- [ ] Implement the approved scope, test it, and report demonstrated behavior and limitations.
+- [x] Implement the approved bootstrap scope and test it (direct TDD; independent review remains outstanding).
+- [x] Integrate the later runtime/catalog, tasks, projects, records, hierarchy, addressing, folding and theme increments.
+- [ ] Complete live two-department acceptance with real user-selected models.
+- [ ] Complete independent spec/quality review.
+- [ ] Implement A2A, progress watchdog, or full worker/ownership features only if separately approved.
 
-No application code, dependency installation, model calls, or external repository changes have been made.
+Current automated verification is 350 ordinary tests, 21 Chromium browser tests and
+7 Node bridge tests, with a built-wheel check. A live attempt on 2026-11-21 was
+blocked by Pi's read-only configuration directory, an invalid DeepSeek key (401), and
+a Claude Code smoke run that did not finish within the window. No successful live
+collaboration is claimed. See [documentation and plan status](docs/documentation-status.md), [verification](docs/verification.md) and [live demo](docs/live-demo.md). The live data directory was backed up but not migrated or restarted.

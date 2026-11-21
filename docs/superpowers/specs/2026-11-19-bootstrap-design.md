@@ -3,11 +3,26 @@
 Date: 2026-11-19.
 Status: **approved**, with the user's addition that departments are named during initial setup. Runtime-neutral core, Pi RPC, local communication-first bootstrap and later A2A boundary are approved. Live model calls still require user-selected models and explicit live-test authorization.
 
-> **Later extension (2026-11-21).** The runtime and model sections below describe
-> the original Pi-first bootstrap. The implemented extension supports per-department
-> `pi`, `claude` and `deepseek` runtimes, a Studio-owned OpenAI-compatible model
-> catalog, a per-run Pi agent directory, and a shared MCP room bridge. See
-> `docs/runtime-abstraction.md` for the current contract. A2A remains deferred.
+> **Later extensions (2026-11-20/21).** This file records the approved original
+> bootstrap. The implementation now differs in the following reviewed ways; where the
+> body conflicts with this table, the current docs win.
+>
+> | Original scope | Current implementation |
+> |---|---|
+> | One project and one room | Multiple isolated project rooms with history/switch/delete |
+> | Pi only | Pi, Claude Code and DeepSeek Harness adapters behind one contract |
+> | Runtime/provider enumeration | Studio-owned OpenAI-compatible model catalog (DeepSeek V4 Flash/Pro bundled) |
+> | Unaddressed human message is a public note | No-`@` message continues the last explicit addressees; explicit public-note opt-out |
+> | Pi extension only | Pi extension plus stdio MCP room bridge for Claude Code/DeepSeek Harness |
+> | No task board | Ongoing task map, metadata branches and explicit human decisions |
+> | Three UI functions | Adds project history, records, hierarchy, folding, addressing, tasks and theme |
+> | One SQLite room | One isolated SQLite database + sessions + records per project |
+>
+> A2A remains deferred; the watchdog and full worker/ownership transfer remain deferred.
+> Current contracts: [runtime abstraction](../../runtime-abstraction.md) and
+> [project rooms, records, hierarchy and addressing](../../projects-records-hierarchy.md).
+> Live two-department acceptance and independent review remain outstanding; see
+> [documentation status](../../documentation-status.md).
 
 ## 1. Outcome
 
@@ -15,11 +30,11 @@ Build a small local application in which the user configures department leads, a
 
 The user is the project lead. There is no AI project manager, global Router, or autonomous priority setter above the departments.
 
-The first demonstration project is `/home/zengma/department-studio`, not a game or a scripted scenario.
+The first demonstration project was the user's Department Studio checkout, not a game or a scripted scenario.
 
 ## 2. Scope and stack
 
-- One local user, one project and one room.
+- One local user. **Current implementation:** multiple isolated project rooms, one active at a time (later extension).
 - Python service using FastAPI, a single service process, and SQLite for durable local records.
 - Plain HTML/CSS/JavaScript served by that service. Avoid a separate frontend build toolchain for the bootstrap.
 - All Python interpreters, dependencies and commands managed through `uv`; maintain `pyproject.toml` and `uv.lock` when implementation starts.
@@ -36,8 +51,8 @@ A lead has a stable ID independent of its native session, and these editable set
 
 - User-chosen department display name and unique user-chosen `@handle`; names are not fixed by the application.
 - Department role/instructions.
-- Backend kind: Pi in this increment.
-- Exact provider and model ID.
+- Backend kind: current implementation supports `pi`, `claude` and `deepseek` (later extension).
+- Exact catalog provider and model ID; Studio owns the catalog (later extension).
 - Existing local workspace/repository directory.
 - Enabled/paused status.
 - Permission mode: **Discuss** or **Develop**, defaulting to Discuss.
@@ -58,7 +73,7 @@ Changing the backend in a future version preserves the department identity and s
 
 ### Human messages
 
-- An ordinary unaddressed message is visible in the room but does not wake every lead. The composer explains that mentions request a response.
+- An ordinary unaddressed message is visible in the room but does not wake every lead. **Current implementation:** an unaddressed human message continues the last explicit addressees; the composer offers an explicit public-note opt-out. (Later extension.)
 - Recognized department mentions select recipients; `@all` explicitly addresses all enabled leads.
 - The composer shows the resolved recipients before submission. Unknown handles are reported before a request is sent.
 - Each submitted human request starts a conversation chain with its own correlation ID and bounded delivery allowance.
@@ -124,7 +139,7 @@ The core depends on a backend contract, not Pi command names or Pi message types
 - Request cancellation and report whether the runtime became idle.
 - Close cleanly.
 
-Pi's model enumeration, configuration and managed local workspace support are adapter capabilities. Future remote A2A agents may not expose them.
+Pi's model enumeration, configuration and managed local workspace support are adapter capabilities. **Current implementation:** model listing comes from Studio's catalog, not a runtime; runtime differences are reported as capabilities. Future remote A2A agents may not expose local workspace support.
 
 The Pi adapter must:
 
@@ -166,9 +181,10 @@ Per-process credentials are regenerated on restart. Do not commit databases, ses
 
 Keep one page with three clear functions:
 
-1. **Leads:** list, create/edit, model/workspace selection, permission mode and status.
-2. **Room:** chronological attributed messages, visible recipients, human composer with mentions, and explicit error/limit notices.
+1. **Leads:** list, create/edit, runtime/model/workspace selection, permission mode and status.
+2. **Room:** chronological attributed messages, visible recipients, human composer with mentions and default-addressing opt-out, peer-message folding, and explicit error/limit notices.
 3. **Control:** room paused/running state, pause/stop and resume actions, with stopping versus confirmed-idle states distinguished.
+4. **Current extensions:** project history, durable records, department hierarchy, ongoing tasks/decisions, and a local light/dark theme.
 
 Do not add a workflow graph editor, organization browser, marketplace or provider-login screen. Backend/frontend code can evolve after the bootstrap; visual styling is finalized during approved implementation, not by importing enterprise administration patterns.
 
@@ -206,9 +222,9 @@ The first implementation milestone ends at the communication/stop demonstration.
 ## 11. Explicit non-goals
 
 - A2A client/server implementation or conformance claims.
-- Claude Code/Codex adapters in the first increment.
+- Claude Code/Codex adapters in the first increment. **Claude Code was added later; Codex remains deferred.**
 - Autonomous project leadership.
-- Nested worker delegation, full task board or automated ownership transfer.
+- Nested worker delegation, full task board or automated ownership transfer. **A persistent task map was added later; transferable ownership remains deferred.**
 - Automatic submodule maintenance, cross-repository releases or GitHub accounts.
 - Browser token streaming, distributed deployment or always-on cloud hosting.
 - Comprehensive sandboxing or guaranteed rollback/exactly-once external effects.
@@ -218,3 +234,10 @@ The first implementation milestone ends at the communication/stop demonstration.
 The user approved this bootstrap scope and requested user-defined department naming at the beginning of setup. This revision makes that requirement explicit. Implementation planning can proceed; full task ownership remains deferred until dogfooding.
 
 At design approval, no application code had been written, dependencies installed, or live model calls made for this prototype.
+
+As of 2026-11-21, the implementation is merged to `main`; automated tests and a
+built-wheel check pass. Live acceptance was attempted but not established: Pi was
+blocked by a read-only config directory, DeepSeek Harness returned HTTP 401 with the
+configured key, and a Claude Code smoke run did not finish in the verification
+window. No successful live collaboration is claimed. See
+[documentation status](../../documentation-status.md).

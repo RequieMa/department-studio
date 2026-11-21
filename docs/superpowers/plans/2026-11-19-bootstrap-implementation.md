@@ -1,8 +1,20 @@
 # Department Studio Bootstrap Implementation Plan
 
-> **Execution update (2026-11-19):** Subagent startup/authentication failed. The user authorized: “Continue TDD here and report the missing independent reviews.” Implementation therefore uses direct TDD in `.worktrees/bootstrap`, branch `feat/communication-bootstrap`. Independent spec-compliance and quality reviews remain outstanding. All Python commands use `uv`.
+> **Execution update (2026-11-19):** Subagent startup/authentication failed. The user authorized: “Continue TDD here and report the missing independent reviews.” Implementation therefore used direct TDD. Independent spec-compliance and quality reviews remain outstanding. All Python commands use `uv`.
 
-Checked steps record implementation and automated verification, not independent approval. The per-task review/commit gates below remain unchecked; implementation is consolidated into one local commit for review. See `docs/verification.md` for test evidence, self-review findings and the remaining live acceptance work.
+> **Current status (2026-11-21):** the bootstrap implementation, plus the later
+> runtime/catalog, task, project-room, records, hierarchy, addressing, folding and
+> theme work, is merged to `main`. The original file paths (`src/...`) and frozen
+> contracts below are historical; current code lives under `backend/src/`. The
+> per-task **review/commit gates** remain unchecked by design — there are no
+> independent approvals. Do not read an unchecked box as missing code unless the
+> current completion audit says so.
+>
+> Current completion audit: [documentation and plan status](../../documentation-status.md).
+> Current contracts: [runtime abstraction](../../runtime-abstraction.md) and
+> [project rooms, records, hierarchy and addressing](../../projects-records-hierarchy.md).
+> Current tests: 350 ordinary, 21 Chromium, 7 Node; wheel build passes. Live
+> acceptance remains blocked/outstanding.
 
 **Goal:** Let one human create user-named departments, assign models/workspaces, and run bounded real Pi-backed conversations in one local room, ready for user-directed self-development.
 
@@ -27,12 +39,12 @@ No live inference in automated tests. Use synthetic model metadata and explicitl
 | Files | Responsibility / owner task |
 |---|---|
 | `pyproject.toml`, `uv.lock`, `.python-version`, `.gitignore` | Toolchain, dependencies and exclusions / 1 |
-| `src/department_studio/__init__.py`, `config.py` | Package and validated local server settings / 1 |
-| `src/department_studio/domain.py`, `store.py` | Models, identity, SQLite transactions and durable routing / 2 |
-| `src/department_studio/backends/base.py`, `service.py` | Backend boundary, scheduling and stopping / 3 |
-| `src/department_studio/backends/pi.py`, `backends/rpc.py`, `pi_extension.ts` | Pi implementation and room bridge / 4 |
-| `src/department_studio/security.py`, `api.py`, `cli.py` | Authentication, HTTP endpoints and local launcher / 5 |
-| `src/department_studio/static/index.html`, `app.js`, `style.css` | First-run configuration and room UI / 6 |
+| `backend/src/department_studio/__init__.py`, `config.py` | Package and validated local server settings / 1 |
+| `backend/src/department_studio/domain.py`, `store.py` | Models, identity, SQLite transactions and durable routing / 2 |
+| `backend/src/department_studio/backends/base.py`, `service.py` | Backend boundary, scheduling and stopping / 3 |
+| `backend/src/department_studio/backends/pi.py`, `backends/rpc.py`, `pi_extension.ts` | Pi implementation and room bridge / 4 |
+| `backend/src/department_studio/security.py`, `api.py`, `cli.py` | Authentication, HTTP endpoints and local launcher / 5 |
+| `frontend/index.html`, `frontend/app.js`, `frontend/style.css`, `frontend/tasks.js`, `frontend/theme.js` | First-run configuration, room, tasks, projects, records, hierarchy, addressing and theme / 6 |
 | `tests/` | Task-owned tests; shared fixtures only changed by their owner |
 | `README.md`, `docs/verification.md` | Operation, limits and verified versus unverified behavior / 7 |
 
@@ -56,7 +68,13 @@ Keep modules focused; separate RPC transport from Pi lifecycle and SQLite storag
 
 Delivery states are `queued`, `running`, `stopping`, `completed`, `failed`, `interrupted`, `canceled`. Each delivery has a unique ID, chain ID, message ID, lead ID, generation, timestamps and sanitized error. SQLite also stores room pause state and each chain's reserved delivery count.
 
-### Backend interface
+### Backend interface (historical original)
+
+**The current contract differs.** It adds capabilities (`room_bridge`,
+`context_maintenance`), context preparation, native session references, a runtime
+registry, and adapters for Pi/Claude Code/DeepSeek Harness. See
+[runtime abstraction](../../runtime-abstraction.md). The block below is retained as
+the original frozen interface, not the current source of truth.
 
 Create these dataclasses/protocol in `backends/base.py`; core code must not import Pi modules:
 
@@ -114,7 +132,15 @@ class AgentBackend(Protocol):
 
 The ellipses above are Python Protocol declarations, not incomplete implementations. Local model/workspace support is documented as a capability; do not force future remote adapters to pretend they own a local directory.
 
-### HTTP contract
+### HTTP contract (historical original)
+
+**Current deltas:** model listing reads Studio's catalog (`GET /api/models`, no
+workspace/provider lookup); projects, records, hierarchy, runtime availability and
+task/action routes were added; `/api/state` includes `active_recipient_ids`,
+`context_checks` and `preparing`; bridge routes cover messages and records. See
+[project rooms, records, hierarchy and addressing](../../projects-records-hierarchy.md)
+and [backend/TASKS.md](../../../backend/TASKS.md). Responses still never include
+provider headers, API keys or runtime tokens.
 
 All `/api/*` requests require a browser owner credential except the narrowly scoped bridge endpoint. Responses must never include provider headers, API keys or runtime tokens.
 
@@ -245,7 +271,7 @@ Before implementing harness integration, read the relevant installed docs/exampl
 - [x] Build argv without a shell. Select exact model/provider, explicit session ID and session directory, explicit workspace cwd, resource-disabling flags and a sole project bridge extension. Choose tools from Discuss/Develop policy. Load approved project instructions deliberately; do not turn project trust into implicit permission for unrelated extensions or MCP servers.
 - [x] Keep runtime/model configuration controls inside this adapter. Project Python remains uv-managed; Pi runs as the installed external executable.
 - [x] Before prompting, request runtime state and verify model selection. Prompt text is an attributed data envelope, never a raw room slash command. Extract public final assistant text only; never broadcast thinking or raw tool results.
-- [x] Implement model enumeration using a no-prompt, no-tool RPC process; project only `{provider,id,name}` into `ModelOption`. Never expose raw model definitions/headers or use a model invocation as a metadata probe.
+- [x] Historical: implement model enumeration using a no-prompt, no-tool RPC process; project only `{provider,id,name}` into `ModelOption`. **Current implementation lists models from Studio's catalog instead; see [runtime abstraction](../../runtime-abstraction.md).**
 - [x] Register `send_room_message` in the project extension with text and recipient-handle arguments. Pi accepts ordinary JSON Schema parameters, so use a plain schema and type-only Pi imports for this small bridge; do not vendor host-provided Pi/TypeBox packages. Its HTTP callback uses per-delivery URL/credential supplied by the host. Derive `call_id` from the tool invocation, not model arguments. Await committed acknowledgement, surface non-2xx errors and propagate cancellation. Do not let tool arguments choose actor, role, run generation or credentials.
 - [x] Test the extension with a mocked Pi registration API and local test HTTP server; verify payload, credential scoping, idempotency key, failures and abort handling. Do not invoke a model.
 - [x] Close stdin for graceful shutdown; bound waiting and escalate to process-group termination when needed. Record uncertainty honestly if termination cannot be confirmed. Never claim rollback of existing edits.
@@ -277,7 +303,7 @@ Visual direction: a quiet studio workbench, not an enterprise dashboard or marke
 - [x] Test that sending `@forge` dispatches to the renamed department, an unknown old handle is rejected, unaddressed posts do not start work, and text resembling HTML is displayed literally.
 - [x] Implement pause/resume and visible stopping/failure/limit notices. Confirm Develop mode with an explicit local-access warning; never imply it is sandboxed.
 - [x] Verify keyboard labels, focus visibility, modal focus/close, mobile layout and reduced motion. Capture desktop/mobile screenshots and review actual rendered output.
-- [x] Use the webapp-testing helper through uv. First run `uv run python /home/zengma/.claude/skills/webapp-testing/scripts/with_server.py --help`; then use its documented server lifecycle options with the test server and `uv run pytest -m browser`. Because the UI polls, wait for a stable visible state rather than an unbounded network-idle wait.
+- [x] Use the webapp-testing helper through uv. First run `uv run python <installed-webapp-testing-helper>/with_server.py --help`; then use its documented server lifecycle options with the test server and `uv run pytest -m browser`. Because the UI polls, wait for a stable visible state rather than an unbounded network-idle wait.
 - [ ] Run browser and Python suites; commit after review.
 
 ## Task 7: end-to-end verification, packaging and operator documentation
@@ -304,7 +330,7 @@ Expected: all selected checks pass; browser tests do not silently skip missing d
 - [x] If available, perform a no-prompt installed-Pi RPC handshake with unrelated extensions/MCP disabled, then shut down. Record exact Pi version and command/event support. Do not treat this as a live collaboration demonstration.
 - [x] Document `uv sync --locked`, `uv run department-studio`, the local launch URL, user-named setup, model configuration errors, Discuss/Develop access, pause/recovery behavior and data location.
 - [x] Document the live acceptance path with user-selected names/models; require explicit permission before calls. Separate “automated tests,” “installed Pi handshake,” and “live multi-model collaboration” evidence. If the last has not run, say so prominently.
-- [ ] Obtain final spec-compliance review, then quality review; fix important findings with regression tests. Run the complete relevant checks again after fixes.
+- [ ] Obtain final spec-compliance review, then quality review; fix important findings with regression tests. Run the complete relevant checks again after fixes. **Not completed: no independent reviewer succeeded; the user authorized direct TDD. This remains a process gap, not missing code.**
 - [x] Summarize verified behavior, remaining live checks, launch instructions and source paths. Do not start self-editing agents or push to a remote without user direction.
 
 ## Execution order and review gates

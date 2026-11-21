@@ -1,5 +1,9 @@
 # History-preserving department deletion
 
+> **Status (2026-11-21):** the HTTP/routing contract remains current and is now
+> project-scoped (each project has its own Store). The schema account below started
+> at v0/v1; current databases are at v4. See [documentation status](../docs/documentation-status.md).
+
 ## HTTP contract
 
 `DELETE /api/leads/{id}?revision=N` uses the existing owner credential and origin checks.
@@ -34,11 +38,13 @@ and does not change authentication, execution permissions or cancellation behavi
 
 ## Schema and rollout
 
-Legacy databases use `PRAGMA user_version=0`. Opening with this version of Store
-transactionally initializes the v0 baseline if needed, adds nullable `leads.deleted_at`,
-and sets user_version to 1. Fresh databases follow the same path; reopening v1 performs
-no schema initialization. Unknown versions are rejected before schema or persistent
-journal-mode writes. Failed migrations roll back and close their database connection.
+The current baseline is `PRAGMA user_version=4`: v1 adds deletion, v2 context
+maintenance, v3 tasks, and v4 hierarchy/default addressing. Opening v0 transactionally
+initializes the baseline, adds deletion, context, task and hierarchy state, and sets
+v4 in one transaction. Fresh databases follow the same path; reopening v4 performs no
+schema initialization. Unknown future versions are rejected before schema or
+persistent journal-mode writes. Failed migrations roll back and close their database
+connection.
 
 Tests generate temporary v0 databases from `tests/fixtures/schema_v0.sql`; no deployed
 room database is used. This code is not authorization to migrate or restart the live app.
@@ -77,11 +83,11 @@ node --check frontend/app.js
 Inherited `PYTHONPATH`, `PYTHONHOME` and `VIRTUAL_ENV` were removed for the test
 invocation so another checkout/environment could not shadow the candidate.
 
-- **182 ordinary tests passed; 5 browser tests deselected.** This includes Store,
-  API, service, deletion/migration and isolated installed-wheel/HTTP asset checks.
-- Ruff lint and formatting passed (38 Python files).
-- All 6 Node bridge tests and frontend JavaScript syntax passed.
-- No live database/session access, live model calls, server restart or migration.
+Historical result at this increment: **182 ordinary tests passed; 5 browser tests
+deselected**, Ruff lint/format, 6 Node bridge tests and JS syntax. Current verification
+is 350 ordinary, 21 Chromium and 7 Node tests with schema v4 and project isolation;
+see [verification](../docs/verification.md). No live model call, server restart or
+production migration has succeeded.
 
 Combined frontend/backend browser verification is still a separate integration gate;
 these results are not evidence that the pending frontend candidates are accepted.

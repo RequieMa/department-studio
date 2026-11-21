@@ -1,5 +1,10 @@
 # Deletion and frontend relaunch integration — 2026-11-20
 
+> **Historical evidence (2026-11-20).** This v1-era relaunch was later superseded by
+> context maintenance, tasks, project rooms and schema v4. Do not use its 182/12/6
+> counts as current. See [documentation status](documentation-status.md).
+
+
 ## Source included
 
 The human requested committing the pending work and integrating the feature worktrees

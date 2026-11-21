@@ -1,5 +1,11 @@
 # Local cleanup audit and frontend Pi recovery — November 20, 2026
 
+> **Historical incident audit (2026-11-20).** The recovery commands below predate
+> project rooms and the schema v4 migration. Current setup is in `README.md` and
+> [live demo](live-demo.md); do not treat this audit as current acceptance evidence.
+> See [documentation status](documentation-status.md).
+
+
 This audit inspected local Git state, both existing room databases through read-only
 SQLite connections, selected native-session metadata, and the installed Pi references.
 It sent no model prompts. Both rooms were paused, had no queued/running/stopping

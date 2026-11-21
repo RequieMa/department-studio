@@ -1,5 +1,11 @@
 # Ongoing tasks and explicit human decisions — v1 contract
 
+> **Status (2026-11-21):** tasks are project-scoped because each project owns an
+> isolated Store. Schema v3 adds the task tables; v4 adds hierarchy/default addressing.
+> The task contract below is current for the task surface. Records and project
+> lifecycle are covered in
+> [project rooms, records, hierarchy and addressing](../docs/projects-records-hierarchy.md).
+
 Approved by the human on 2026-11-20. Implementation lives in `tasks.py`, `task_api.py`
 and the existing Store/RoomService integration. No runtime tools, authentication,
 permission, deadline or cancellation policy changes are part of this feature.

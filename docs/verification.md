@@ -1,10 +1,38 @@
-# Bootstrap verification — November 19, 2026
+# Bootstrap verification and current checkpoint
 
-Implementation: `/home/zengma/department-studio/.worktrees/bootstrap`, branch `feat/communication-bootstrap`.
+> **Document status:** the early sections below are historical bootstrap evidence from
+> November 19–20 (including a `.worktrees/bootstrap` checkout that no longer exists).
+> The **current** checkpoint is the `Current runtime/catalog/project reconciliation`
+> section at the bottom. For document-by-document status, see
+> [documentation and plan status](documentation-status.md).
 
-The original repository's Git metadata was read-only, so implementation used an isolated writable local checkout. Use that checkout to run and review the implementation. The approved design remains in `docs/superpowers/specs/2026-11-19-bootstrap-design.md`; implementation progress is recorded in the corresponding plan.
+**Independent spec-compliance and quality reviews have not been performed. Live
+model-backed Department Studio collaboration has not succeeded.** These are
+outstanding acceptance activities, not passing test results.
 
-**Independent spec-compliance and quality reviews have not been performed. Live model-backed Department Studio collaboration has not been run.** These are outstanding acceptance activities, not passing test results.
+## Current live-attempt record — November 21, 2026
+
+A bounded live attempt was made after backing up the real data directory. The live
+room was **not** migrated, restarted or modified.
+
+- Backup: `artifacts/live-demo-pre-live-2026-11-21-232350/` (git-ignored, mode 0700,
+  SHA256SUMS). SQLite `integrity_check` = `ok`; schema v3; 5 departments, 180
+  messages, 116 deliveries, 8 source/backup files.
+- Pi smoke: failed before inference because the default Pi agent directory is
+  read-only (`EACCES` creating `settings.json.lock`/`auth.json.lock`). This is a local
+  configuration-environment blocker, not a model rejection. Studio's generated
+  per-run Pi directory avoids the default directory, but a full Studio live run was
+  not completed.
+- DeepSeek Harness smoke: copied the headless profile to a writable temporary
+  `DSH_HOME`, then the configured key returned HTTP 401 (`Authentication Fails`).
+  No successful model turn.
+- Claude Code smoke: did not finish within the 120-second verification window and
+  was stopped. No result was accepted as success.
+
+No live collaboration, records tool call, cancellation, resume-after-restart or
+provider acceptance was established. A future attempt needs a writable Pi config
+directory, a valid DeepSeek key, and a Claude Code path that completes a one-word
+smoke call. See [runtime abstraction](runtime-abstraction.md) for the contract.
 
 ## Automated results
 
@@ -175,12 +203,13 @@ The combined branch passed:
   branches/decisions, the runtime/model dialog, project history/switch/delete,
   records, hierarchy toggling, peer-message folding, default addressing and dark mode.
 - 7 Node bridge-extension tests, Ruff lint/format and JavaScript syntax checks.
-- A real-database **copy** migrated from schema v2 to v4 with all 5 departments,
+- A real-database **copy** migrated from schema v3 to v4 with all 5 departments,
   180 messages and 116 deliveries preserved; hierarchy backfilled to a complete graph.
 - Source-distribution to wheel build and installed-artifact checks, including the
   packaged default catalog, runtime adapters, MCP bridge and task assets.
 
-No live model call, persistent data migration or service restart was performed.
-The Claude Code and DeepSeek Harness adapters therefore remain live-unverified; their
-observable boundaries and remaining acceptance checks are listed in
-[runtime abstraction](runtime-abstraction.md) and [live demo](live-demo.md).
+No successful live model call, persistent production migration or service restart
+was performed. The bounded attempts and blockers are recorded above; the Claude Code
+and DeepSeek Harness adapters remain live-unverified. Their observable boundaries and
+remaining acceptance checks are listed in [runtime abstraction](runtime-abstraction.md)
+and [live demo](live-demo.md).

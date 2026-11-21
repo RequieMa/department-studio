@@ -1,5 +1,10 @@
 # Pi command timeout investigation and robustness candidate
 
+> **Historical evidence (2026-11-20).** Later context, runtime and project work
+> superseded parts of this RPC diagnostic. Current contracts: [runtime abstraction](runtime-abstraction.md).
+> See [documentation status](documentation-status.md).
+
+
 Follow-up: the [November 20 runtime audit](2026-11-20-runtime-audit.md) inspected the
 retained live-demo sessions and identified context exhaustion and pre-prompt compaction
 as the next issue. It records the subsequent tested fix and recovery steps. The initial

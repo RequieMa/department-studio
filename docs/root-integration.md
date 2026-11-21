@@ -1,5 +1,10 @@
 # Root checkout integration
 
+> **Historical bootstrap import.** The old bootstrap checkout/room is archived; the
+> current data layout uses isolated projects under the data directory. See
+> [project rooms, records, hierarchy and addressing](projects-records-hierarchy.md).
+
+
 The old `.worktrees/bootstrap` checkout was archived and removed on November 20,
 2026, after confirming that the current demo's workspaces and saved sessions did not
 reference it. Its private archive and restore instructions are in

@@ -1,5 +1,10 @@
 # Frontend integration verification — November 20, 2026
 
+> **Historical evidence (2026-11-20).** This candidate was later integrated and
+> superseded by task/project/records/hierarchy/theme work. Do not use its 11-browser-test
+> counts as current. See [documentation status](documentation-status.md).
+
+
 ## Candidate
 
 The `feat/frontend-activity-notifications` worktree integrates the shared

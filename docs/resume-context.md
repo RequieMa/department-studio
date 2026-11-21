@@ -1,5 +1,12 @@
 # Context maintenance on Resume — November 20, 2026
 
+> **Scope update (2026-11-21):** context checks are now per project, because each
+> project owns an isolated Store and native session directory. Resume only prepares
+> the active project; switching projects closes the current room service first.
+> The policy below remains current, but its 238/13/6 test counts and
+> `/home/zengma` launch path are historical. Current counts are 350 ordinary,
+> 21 Chromium and 7 Node tests; see [documentation status](documentation-status.md).
+
 Resume now prepares the conversations of every enabled department before the room
 accepts new work. This addresses the live-demo loop in which repeated full room
 snapshots accumulated in Pi until even conversation compaction failed.
@@ -94,7 +101,8 @@ four native session files, with hashes in `manifest.json`. The directory is mode
 0700 and git-ignored. It contains 123 public messages; later activity requires a
 new backup. Original session files were verified against the copies and retained.
 
-For the existing room, restart the server from the root checkout:
+For the historical room launch path (verify the actual checkout/data directory
+before using it), restart the server from the root checkout:
 
 ```bash
 cd /home/zengma/department-studio
@@ -110,8 +118,10 @@ saved settings; no workspace change or manual SQLite/session deletion is needed.
 
 ## Verification
 
-Final checks: **238 ordinary tests, 13 browser tests and six Node bridge tests
-passed**. Ruff lint/format, JavaScript syntax and whitespace checks passed. The
+Historical final checks at this increment: **238 ordinary tests, 13 browser tests
+and six Node bridge tests passed**. Current counts and the records/project/hierarchy
+work are recorded in [verification](verification.md). Ruff lint/format, JavaScript
+syntax and whitespace checks passed. The
 synthetic integration test exercises an oversized conversation through Resume,
 then confirms that one new explicit request runs with the new conversation ID
 while the previous request, native transcript and workspace edit remain intact.

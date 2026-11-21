@@ -23,7 +23,7 @@ owner deletion and reload.
 Root `main` advanced with context maintenance while the task branch was isolated.
 The reconciliation on `integration/runtimes-tasks`:
 
-- keeps context maintenance as schema v2, moves tasks to schema v3, and reserves schema v4 for hierarchy/default addressing;
+- keeps context maintenance as schema v2, moves tasks to schema v3, and adds schema v4 for hierarchy/default addressing;
 - makes the v2 step idempotent so a released context-only database and the
   short-lived task-only v2 shape both upgrade safely;
 - combines bounded incremental room history with the immutable task snapshot;
@@ -42,7 +42,9 @@ The combined source has passed:
 - **350 ordinary tests** using temporary SQLite and synthetic runtime processes,
   including catalog, registry, Claude Code, DeepSeek Harness and MCP bridge fixtures.
 - **21 Chromium browser tests** against an owned local synthetic HTTP server,
-  including three task-specific real-endpoint tests and the runtime/model dialog.
+  including three task-specific real-endpoint tests, runtime/model selection,
+  project history/switch/delete, records, hierarchy, peer folding, addressing and
+  dark mode.
 - **7 Node bridge tests**, JavaScript syntax, Ruff lint/format and whitespace checks.
 - Source-distribution → wheel build. Installed-artifact checks run away from the
   checkout with source-import environment overrides removed. They verify packaged
@@ -50,8 +52,11 @@ The combined source has passed:
   MCP bridge, the actual `app.js` import of `tasks.js`, JavaScript content types and
   exact served asset bytes against the wheel, including `/tasks.js`.
 
-No live Claude Code or DeepSeek Harness inference was run. Those adapters are
-verified against deterministic fixture processes only.
+No successful live Claude Code or DeepSeek Harness inference was established.
+Those adapters are verified against deterministic fixture processes only; the
+2026-11-21 bounded attempt was blocked by Pi config permissions, an invalid
+DeepSeek key (401), and a Claude smoke timeout. See
+[verification](verification.md) and [documentation status](documentation-status.md).
 
 Browser servers use temporary data, `/bin/true` rather than a live Pi executable,
 an explicit test credential and an available loopback port. Only the test runner's
@@ -77,10 +82,11 @@ semantic conflicts rather than merging around them:
   prompt;
 - `frontend/app.js`: actionable-only Activity plus context preparation and the new
   runtime/model selector;
-- migration, browser and packaging tests updated for v3 and the new endpoints.
+- migration, browser and packaging tests updated for v4 and the new endpoints.
 
-The source merge is not a live deployment. No running room, persistent database or
-native session was modified during implementation.
+The source merge is not a live deployment. A real-data **copy** was migrated
+through v4 during verification; the live room was backed up but not migrated,
+restarted or modified by implementation.
 
 ## Release boundary
 
