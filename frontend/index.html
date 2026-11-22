@@ -184,20 +184,11 @@
       <p class="field-help">Choose an existing local directory. Its AGENTS.md instructions are included. A changed directory or runtime starts a fresh native conversation; room history is retained.</p>
       <label>Agent runtime<select id="lead-runtime" name="runtime" aria-label="Agent runtime" required><option value="pi">Pi</option><option value="claude">Claude Code</option><option value="deepseek">DeepSeek Harness</option></select></label>
       <div class="model-heading"><span class="eyebrow">Model catalog</span><button id="load-models" type="button" class="secondary compact">Load models</button></div>
-      <label>Model<select id="lead-model" name="model" aria-label="Model" required disabled><option value="">Loading configured models…</option></select></label>
+      <label>Lead model<select id="lead-model" name="model" aria-label="Model" required disabled><option value="">Loading configured models…</option></select></label>
       <p id="model-help" class="field-help">Models come from Department Studio’s configured catalog. Listing a model does not verify its connection or spend.</p>
-
-      <fieldset class="permissions"><legend>Tool access</legend>
-        <div class="permission-options">
-          <label><input type="radio" name="permission" value="discuss" aria-label="Discuss" checked><span><strong>Discuss</strong><small>Read, search, list and room messages</small></span></label>
-          <label><input type="radio" name="permission" value="develop" aria-label="Develop"><span><strong>Develop</strong><small>Add editing, writing and shell</small></span></label>
-        </div>
-        <p class="field-help">Tools use your local account. A workspace path is not a security sandbox.</p>
-        <div id="develop-warning" class="develop-warning" hidden>
-          <p>These tools run with your local account's access. Enable them only for work you explicitly request. Review changes before applying them to the running app.</p>
-          <label id="consent-label" class="check-label"><input type="checkbox" id="develop-consent">I allow local editing, writing and shell for this department.</label>
-        </div>
-      </fieldset>
+      <label>Worker model<select id="lead-worker-model" aria-label="Worker model" disabled><option value="">Use the lead model</option></select></label>
+      <p id="worker-model-help" class="field-help">Summoned workers use this model with development tools in their own task worktree. Workers never join the room.</p>
+      <p class="field-help lead-mode-note"><strong>Lead tool access:</strong> Discuss only. Only summoned workers use development tools.</p>
       <label class="check-label availability"><input type="checkbox" id="lead-enabled" checked>Available for addressed requests</label>
       <div id="form-error" class="inline-error" role="alert" hidden></div>
       <div class="dialog-actions"><button id="delete-department" class="danger" type="button" hidden>Delete department…</button><span class="dialog-actions-spacer"></span><button id="cancel-dialog" class="secondary" type="button">Cancel</button>

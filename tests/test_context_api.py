@@ -60,7 +60,7 @@ async def test_resume_result_is_visible_and_changes_only_conversation_when_neede
     assert state["context_checks"][0]["state"] == action
     assert state["paused"] == (action == "failed")
     current = state["leads"][0]
-    for field in ("id", "name", "handle", "permission", "workspace", "provider", "model_id"):
+    for field in ("id", "name", "handle", "workspace", "provider", "model_id"):
         assert current[field] == lead[field]
     assert (current["conversation_id"] != lead["conversation_id"]) == (action == "reset")
     assert not backend.requests

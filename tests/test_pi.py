@@ -109,7 +109,7 @@ async def test_explicit_session_model_workspace_and_restricted_launch_policy(
     instructions = args[args.index("--append-system-prompt") + 1]
     assert "Use uv for all Python commands." in instructions
     assert request.lead.role in instructions
-    assert "not filesystem isolation" in instructions
+    assert "Department leads use Discuss tools only" in instructions
     assert "Project records folder:" in instructions
     assert "Keep room messages brief" in instructions
     assert str(tmp_path / "records") in instructions
@@ -118,12 +118,11 @@ async def test_explicit_session_model_workspace_and_restricted_launch_policy(
     await backend.close()
 
 
-async def test_develop_tools_and_fresh_process_preserve_conversation(
+async def test_leads_always_use_discuss_tools_and_fresh_process_preserves_conversation(
     backend_factory, request_factory, tmp_path
 ):
     backend = backend_factory()
     request = request_factory()
-    request = replace(request, lead=replace(request.lead, permission="develop"))
     await backend.run(request, no_events)
     await backend.run(replace(request, id="run-2", bridge_token="second-token"), no_events)
     launches = [r for r in records(tmp_path) if "argv" in r]
@@ -131,7 +130,7 @@ async def test_develop_tools_and_fresh_process_preserve_conversation(
     assert {r["bridge_token"] for r in launches} == {request.bridge_token, "second-token"}
     for launch in launches:
         args = launch["argv"]
-        assert {"bash", "edit", "write"} <= set(args[args.index("--tools") + 1].split(","))
+        assert {"bash", "edit", "write"}.isdisjoint(set(args[args.index("--tools") + 1].split(",")))
         assert request.lead.conversation_id in args
 
 

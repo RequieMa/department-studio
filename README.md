@@ -51,7 +51,7 @@ For the archived bootstrap room and its restore process, see [root checkout inte
 1. Choose **Add department**. Enter any display name, a unique handle, and the department's role/instructions. Names support Unicode. Handles use lowercase letters, digits, `_` and `-`; `all`, `you` and `system` are reserved.
 2. Click **Browse folders**, navigate to an existing local directory, and choose **Use this folder**. The picker browses folders on the machine running Studio and includes Home, Project folder, parent navigation and a name filter. Studio fills the workspace path and deliberately includes that directory's root `AGENTS.md`. It does not clone repositories or create worktrees.
 3. Choose an **Agent runtime** and an exact model from Studio's catalog. There is no default model selection. Model listing reads the configured catalog only; it does not contact a provider or start an agent.
-4. Save with **Discuss**, the default tool mode. Add further departments as needed, then resume the room when ready to send addressed work.
+4. Optionally choose a **worker model** (defaults to the lead model). Leads always use Discuss tools; summoned workers will use development tools in their own task worktree. Add further departments as needed, then resume the room when ready to send addressed work. Existing leads load as Discuss-only; the old permission setting is ignored and the worker model stays empty until selected.
 
 Studio owns the selectable model catalog; it does not reuse a Pi provider list or credentials. The bundled `backend/src/department_studio/default_models.toml` declares DeepSeek V4 Flash and V4 Pro through an OpenAI-compatible endpoint. Override it with `--models-config PATH` or `DEPARTMENT_STUDIO_MODELS_CONFIG`. Only `api = "openai-completions"` is accepted in this increment. Put keys in the launching environment, named by `api_key_env`; the browser never receives them. A listed model can still fail at inference time, and Studio reports that failure without substituting another model. See [runtime abstraction](docs/runtime-abstraction.md) for the schema and per-runtime translation.
 
@@ -80,7 +80,7 @@ An existing single room is adopted as **My first project** in place. New project
 Every project has a private `records/` folder beside its SQLite database. It is the durable audit trail shared by the human and every department. Keep room messages short: put decisions, evidence, file paths, handoffs and longer findings into a Markdown record, then reference its exact absolute path in the room.
 
 - The **Records** button opens the list, viewer and human note form.
-- Every runtime gets `list_records`, `read_record` and `write_record` through the room bridge. DeepSeek Harness reads are unconfined; Develop writes use its full-access mode. Pi and Claude Code also receive the absolute folder path.
+- Every runtime gets `list_records`, `read_record` and `write_record` through the room bridge. Leads can leave audit notes in Discuss; future workers with development tools can write in their own worktree. Pi and Claude Code also receive the absolute folder path.
 - Record names are flat `.md` filenames. Content is bounded at 512 KiB; credentials and raw private reasoning are prohibited.
 - Records belong to their project and are removed with that project's Studio data.
 
@@ -124,11 +124,11 @@ Instructions target that node's stable department ID; mentions inside them do no
 
 See [backend/TASKS.md](backend/TASKS.md) for APIs, idempotency, lifecycle, pagination and migration details. Context maintenance, tasks and hierarchy now share **schema v4**: v1 adds deletion, v2 adds context checks, v3 adds tasks, and v4 adds the department hierarchy plus default-addressing state. Stop writers and back up the full persistent data/native sessions before upgrading; use the same absolute data directory and do not downgrade afterward. A port-bind failure does not guarantee the database was untouched: the current CLI opens Store before binding.
 
-## Discuss, Develop and manual continuation
+## Lead tools, worker models and manual continuation
 
-**Discuss** is a reduced tool set, **not filesystem isolation**: Pi gets read/search/list plus the room tools; Claude Code gets `Read`, `Grep`, `Glob` plus the MCP room tools; DeepSeek Harness gets its read/search tools with write, edit and shell tools disabled. All runtimes can list/read/append project records through the room bridge. Files are accessed as the local OS user; the selected workspace is not a sandbox.
+Department leads always use **Discuss** tools, **not filesystem isolation**: Pi gets read/search/list plus the room tools; Claude Code gets `Read`, `Grep`, `Glob` plus the MCP room tools; DeepSeek Harness gets its read/search tools with write, edit and shell tools disabled. All runtimes can list/read/append project records through the room bridge. Files are accessed as the local OS user; the selected workspace is not a sandbox.
 
-**Develop** adds editing, writing and shell tools. The UI requires explicit confirmation when enabling it. This authorizes local work needed for your explicit request, including project dependency and test commands. It does not grant permission to push, publish, deploy, access unrelated data, perform unrelated destructive actions, or use additional external services. Agents are instructed to ask you in the room first. These are operating rules for trusted local agents; a general shell is not a universal approval enforcement system.
+The department dialog has no lead Discuss/Develop switch. It offers an optional **worker model**; summoned workers will use development tools in their own task worktree and are not room participants. Worker execution is not implemented yet; this configuration is preparatory. Development work must stay within the human's explicit request and must not push, publish, deploy, access unrelated data, perform unrelated destructive actions, or use additional external services without a human decision. These are operating rules for trusted local agents; a general shell is not a universal approval enforcement system.
 
 Use **Pause & stop** before manual continuation. Studio blocks dispatch, cancels queued work and revokes active credentials before requesting native cancellation. Pi clears its queue and aborts; one-shot adapters close stdin and terminate their process group. Studio waits for idle/exit and escalates to process-group termination if needed. A stopping department stays unavailable until exit or idle is confirmed. Existing edits are preserved; stopping is not rollback or proof that every external side effect has stopped.
 
@@ -150,7 +150,7 @@ The application protects local roles and accidental cross-origin access. It is a
 
 ## Verification
 
-All Python environments, dependencies and commands use `uv`. The ordinary test suite uses deterministic backends plus fake Pi, Claude Code and DeepSeek Harness subprocesses; it does not call live models. A local MCP bridge test exercises the stdio JSON-RPC boundary against a loopback HTTP fixture, including record tools. Current verification: **350 ordinary tests, 21 Chromium browser tests and 7 Node bridge tests**, plus Ruff, JavaScript syntax and an installed-wheel build.
+All Python environments, dependencies and commands use `uv`. The ordinary test suite uses deterministic backends plus fake Pi, Claude Code and DeepSeek Harness subprocesses; it does not call live models. A local MCP bridge test exercises the stdio JSON-RPC boundary against a loopback HTTP fixture, including record tools. Current verification: **352 ordinary tests, 21 Chromium browser tests and 7 Node bridge tests**, plus Ruff, JavaScript syntax and an installed-wheel build.
 
 ```bash
 uv sync --locked

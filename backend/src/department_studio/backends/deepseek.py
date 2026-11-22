@@ -81,9 +81,7 @@ class DeepSeekBackend:
         env.update(self._extra_env)
         env["DEPARTMENT_STUDIO_BRIDGE_URL"] = request.bridge_url
         env["DEPARTMENT_STUDIO_BRIDGE_TOKEN"] = request.bridge_token
-        env["DSH_PERMISSION_MODE"] = (
-            "danger-full-access" if request.lead.permission == "develop" else "read-only"
-        )
+        env["DSH_PERMISSION_MODE"] = "read-only"
         if selection.provider.anthropic_base_url:
             env["DEEPSEEK_BASE_URL"] = selection.provider.anthropic_base_url
         if selection.api_key:
@@ -123,27 +121,26 @@ class DeepSeekBackend:
             "      DEPARTMENT_STUDIO_BRIDGE_URL: !!js process.env.DEPARTMENT_STUDIO_BRIDGE_URL",
             "      DEPARTMENT_STUDIO_BRIDGE_TOKEN: !!js process.env.DEPARTMENT_STUDIO_BRIDGE_TOKEN",
         ]
-        if request.lead.permission != "develop":
-            lines.extend(
-                [
-                    "- id: tool-bash",
-                    "  disabled: true",
-                    "- id: tool-pwsh",
-                    "  disabled: true",
-                    "- id: tool-jobs",
-                    "  disabled: true",
-                    "- id: tool-fs",
-                    "  config:",
-                    "    write: false",
-                    "    edit: false",
-                    "- id: tool-web",
-                    "  disabled: true",
-                    "- id: tool-subagent",
-                    "  disabled: true",
-                    "- id: tool-workflow",
-                    "  disabled: true",
-                ]
-            )
+        lines.extend(
+            [
+                "- id: tool-bash",
+                "  disabled: true",
+                "- id: tool-pwsh",
+                "  disabled: true",
+                "- id: tool-jobs",
+                "  disabled: true",
+                "- id: tool-fs",
+                "  config:",
+                "    write: false",
+                "    edit: false",
+                "- id: tool-web",
+                "  disabled: true",
+                "- id: tool-subagent",
+                "  disabled: true",
+                "- id: tool-workflow",
+                "  disabled: true",
+            ]
+        )
         return "\n".join(lines) + "\n"
 
     def _arguments(self, request: RunRequest, patch_path: Path) -> list[str]:

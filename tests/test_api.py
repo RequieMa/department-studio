@@ -40,7 +40,6 @@ def lead_body(tmp_path, **changes):
         "model_id": "model-a",
         "workspace": str(tmp_path),
         "enabled": True,
-        "permission": "discuss",
         **changes,
     }
 
@@ -388,3 +387,32 @@ async def test_api_continuation_and_public_note_addressing(http_app, tmp_path):
     assert (await client.get("/api/state")).json()["active_recipient_ids"] == [lead["id"]]
     invalid = await client.post("/api/messages", json={"text": "note", "public_note": "yes"})
     assert invalid.status_code == 422
+
+
+async def test_worker_model_selection_persists(http_app, tmp_path):
+    client, app, _ = http_app
+    body = lead_body(
+        tmp_path,
+        worker_provider="test",
+        worker_model_id="model-b",
+        handle="worker-model",
+    )
+    created = await client.post("/api/leads", json=body)
+    assert created.status_code == 201
+    data = created.json()
+    assert data["worker_provider"] == "test"
+    assert data["worker_model_id"] == "model-b"
+    stored = app.state.store.get_lead(data["id"])
+    assert (stored.worker_provider, stored.worker_model_id) == ("test", "model-b")
+    patched = await client.patch(
+        f"/api/leads/{data['id']}",
+        json=lead_body(
+            tmp_path,
+            handle="worker-model",
+            worker_provider="test",
+            worker_model_id="model-c",
+            revision=data["revision"],
+        ),
+    )
+    assert patched.status_code == 200
+    assert patched.json()["worker_model_id"] == "model-c"

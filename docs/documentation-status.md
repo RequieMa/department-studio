@@ -23,7 +23,8 @@ test counts as current.
 | DeepSeek Harness adapter | Implemented, not live-verified | copied headless profile + configured key returned HTTP 401 |
 | HTTP/security/launcher | Complete | API/security/packaging tests |
 | Browser UI setup/room | Complete | 21 Chromium tests |
-| Runtime/model catalog extension | Complete | 350 ordinary tests; no qgenie in source |
+| Runtime/model catalog extension | Complete | 352 ordinary tests; no qgenie in source |
+| Department lead/worker model config | Complete | leads Discuss-only; optional worker model; worker execution still proposed |
 | Ongoing tasks + decisions | Complete and merged | schema v3, API/UI/browser tests |
 | Projects/history/switch/delete | Complete | isolated Store/Service per project; API/UI/browser tests |
 | Records + bridge tools | Complete | owner API/UI, Pi extension and MCP tools; 512 KiB bounded records |
@@ -117,7 +118,7 @@ counted as "all plan checkboxes green"; they remain process gaps.
 
 ## Current verification checkpoint
 
-- 350 ordinary tests, 21 Chromium browser tests, 7 Node bridge tests; Ruff and
+- 352 ordinary tests, 21 Chromium browser tests, 7 Node bridge tests; Ruff and
   formatting clean; wheel build and installed-artifact checks pass.
 - Real-database copy migrated v3→v4 with 5 departments, 180 messages and 116
   deliveries preserved; hierarchy backfilled to 10 edges.

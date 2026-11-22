@@ -53,8 +53,9 @@ class LeadCreate:
     provider: str
     model_id: str
     workspace: str
+    worker_provider: str = ""
+    worker_model_id: str = ""
     enabled: bool = True
-    permission: Literal["discuss", "develop"] = "discuss"
     backend_kind: Literal["pi", "claude", "deepseek"] = "pi"
 
     def __post_init__(self):
@@ -63,6 +64,15 @@ class LeadCreate:
             if not isinstance(value, str) or not 1 <= len(value.strip()) <= limit:
                 raise Invalid(f"{field} must contain 1–{limit} characters.")
             object.__setattr__(self, field, value.strip())
+        for field in ("worker_provider", "worker_model_id"):
+            value = getattr(self, field)
+            if not isinstance(value, str):
+                raise Invalid(f"{field} must be text.")
+            if len(value.strip()) > 200:
+                raise Invalid(f"{field} must contain at most 200 characters.")
+            object.__setattr__(self, field, value.strip())
+        if bool(self.worker_provider) != bool(self.worker_model_id):
+            raise Invalid("Worker provider and worker model must be set together.")
         handle = normalize_handle(self.handle)
         if handle in {"all", "you", "system"}:
             raise Invalid("That handle is reserved.")
@@ -70,8 +80,6 @@ class LeadCreate:
         object.__setattr__(self, "workspace", workspace_path(self.workspace))
         if type(self.enabled) is not bool:
             raise Invalid("enabled must be a boolean.")
-        if self.permission not in {"discuss", "develop"}:
-            raise Invalid("Permission must be discuss or develop.")
         if self.backend_kind not in {"pi", "claude", "deepseek"}:
             raise Invalid("Choose the Pi, Claude Code or DeepSeek Harness runtime.")
 

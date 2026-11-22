@@ -39,7 +39,7 @@ and workspace files are retained.
 
 The combined source has passed:
 
-- **350 ordinary tests** using temporary SQLite and synthetic runtime processes,
+- **352 ordinary tests** using temporary SQLite and synthetic runtime processes,
   including catalog, registry, Claude Code, DeepSeek Harness and MCP bridge fixtures.
 - **21 Chromium browser tests** against an owned local synthetic HTTP server,
   including three task-specific real-endpoint tests, runtime/model selection,

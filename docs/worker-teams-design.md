@@ -111,10 +111,11 @@ worker_report_blocked(reason)
 worker_report_failed(reason)
 ```
 
-Workers may use the runtime's file/shell tools only when the lead/task is Develop;
-Discuss workers are read-only. Workers cannot spawn further workers by default
-(depth 1), matching DSH's bounded delegation. A task's `permission` can only narrow
-the lead's permission, never widen it.
+Department leads are always Discuss/read-only. Workers are the only agents that may
+use development tools (file edits, writes and shell) in their task worktree. Workers
+cannot spawn further workers by default (depth 1), matching DSH's bounded delegation.
+Worker tool policy can only narrow the task's development scope, never widen the
+lead's authority.
 
 ### 4.3 Task/assignment lifecycle
 
@@ -163,8 +164,9 @@ open decision because it changes scheduling semantics.
 ### 4.5 Concurrency and isolation
 
 - Per-department worker slots (default 2–3), global worker cap, project cap.
-- Each Develop worker gets its own git worktree/branch under the project data
-  directory, not the lead's workspace. Discuss workers may share a read-only checkout.
+- Each development worker gets its own git worktree/branch under the project data
+  directory, not the lead's workspace. Read-only investigation workers may share a
+  checkout.
 - Every worker gets a distinct native session (`worker-<id>`), no room identity.
 - Stop/cancel: revoke the worker generation, close stdin, confirm process exit, then
   report; never kill unrelated lead/peer work.

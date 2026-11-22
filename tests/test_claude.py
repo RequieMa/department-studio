@@ -97,7 +97,7 @@ async def test_print_mode_uses_catalog_model_bridge_and_bounded_tools(
     await backend.close()
 
 
-async def test_resume_uses_native_session_ref_and_develop_tools(
+async def test_resume_uses_native_session_ref_and_discuss_tools(
     backend_factory, request_factory, tmp_path
 ):
     backend = backend_factory()
@@ -106,7 +106,6 @@ async def test_resume_uses_native_session_ref_and_develop_tools(
     resumed = replace(
         first,
         id="run-2",
-        lead=replace(first.lead, permission="develop"),
         native_session_ref=outcome.native_session_ref,
     )
     assert (await backend.run(resumed, no_events)).state == "completed"
@@ -116,7 +115,7 @@ async def test_resume_uses_native_session_ref_and_develop_tools(
     assert launches[1]["resume"] == outcome.native_session_ref
     assert "--session-id" not in launches[1]["argv"]
     tools = set(launches[1]["tools"].split(","))
-    assert {"Read", "Edit", "Write", "Bash"} <= tools
+    assert {"Edit", "Write", "Bash"}.isdisjoint(tools)
     await backend.close()
 
 

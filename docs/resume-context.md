@@ -28,7 +28,7 @@ them; preparation never activates a disabled department.
 
 Compaction can use the department's selected provider/model. It runs without work
 tools, the room bridge, or delivery credentials. Preparation does not send an agent
-prompt, restart an old task, or change a department's model, workspace or permission.
+prompt, restart an old task, or change a department's lead/worker model or workspace.
 
 ## Context policy
 

@@ -18,6 +18,7 @@ let firstSnapshot = true;
 let editing = null;
 let saving = false;
 let modelOptions = new Map();
+let workerModelOptions = new Map();
 let catalogModels = [];
 let catalogRuntimes = [];
 const runtimeLabels = { pi: "Pi", claude: "Claude Code", deepseek: "DeepSeek Harness" };
@@ -126,8 +127,9 @@ function renderRoster() {
     status.classList.toggle("active", ["running", "preparing"].includes(lead.status));
     status.classList.toggle("warning", lead.status === "stopping");
     const permission = card.querySelector(".permission-badge");
-    text(permission, lead.permission === "develop" ? "Develop" : "Discuss");
-    permission.classList.toggle("develop", lead.permission === "develop");
+    text(permission, "Discuss");
+    permission.title = "Leads discuss; summoned workers use development tools.";
+    permission.classList.remove("develop");
     const check = (state.context_checks || []).find((item) => item.lead_id === lead.id);
     const contextNote = card.querySelector(".context-note");
     contextNote.hidden = !check || check.state === "kept";
@@ -700,8 +702,11 @@ for (const action of ["pause", "resume"]) {
 
 function resetModels(message) {
   modelOptions = new Map();
+  workerModelOptions = new Map();
   $("#lead-model").replaceChildren(new Option(message, ""));
   $("#lead-model").disabled = true;
+  $("#lead-worker-model").replaceChildren(new Option("Use the lead model", ""));
+  $("#lead-worker-model").disabled = true;
 }
 
 function runtimeInfo(kind) {
@@ -727,43 +732,68 @@ function populateRuntimes() {
 
 function renderModels(saved = null) {
   const runtime = $("#lead-runtime").value || "pi";
-  const current = modelOptions.get($("#lead-model").value);
+  const currentLead = modelOptions.get($("#lead-model").value);
+  const currentWorker = workerModelOptions.get($("#lead-worker-model").value);
   const models = catalogModels.filter((model) => !model.runtimes?.length || model.runtimes.includes(runtime));
   resetModels(models.length ? "Choose a model" : "No configured models for this runtime");
   let savedMissing = false;
+  let workerMissing = false;
   models.forEach((model, index) => {
     const key = String(index);
-    modelOptions.set(key, model);
     const credential = model.credential_ready === false && model.credential_env
       ? ` · set ${model.credential_env}` : "";
-    $("#lead-model").append(new Option(`${model.name} · ${model.provider} / ${model.id}${credential}`, key));
+    const label = `${model.name} · ${model.provider} / ${model.id}${credential}`;
+    modelOptions.set(key, model);
+    $("#lead-model").append(new Option(label, key));
+    workerModelOptions.set(key, model);
+    $("#lead-worker-model").append(new Option(label, key));
   });
-  const preferred = current || saved;
-  if (preferred?.provider && preferred?.id || preferred?.provider && preferred?.model_id) {
-    const provider = preferred.provider;
-    const modelId = preferred.model_id || preferred.id;
+  const preferredLead = currentLead || saved;
+  if (preferredLead?.provider && preferredLead?.id || preferredLead?.provider && preferredLead?.model_id) {
+    const provider = preferredLead.provider;
+    const modelId = preferredLead === saved ? preferredLead.model_id : preferredLead.id;
     const index = models.findIndex((model) => model.provider === provider && model.id === modelId);
     if (index >= 0) {
       $("#lead-model").value = String(index);
-    } else if (preferred === saved) {
+    } else if (preferredLead === saved) {
       savedMissing = true;
     }
   }
+  const preferredWorker = currentWorker || (saved?.worker_provider && saved?.worker_model_id
+    ? { provider: saved.worker_provider, id: saved.worker_model_id }
+    : null);
+  if (preferredWorker?.provider) {
+    const index = models.findIndex(
+      (model) => model.provider === preferredWorker.provider && model.id === preferredWorker.id,
+    );
+    if (index >= 0) {
+      $("#lead-worker-model").value = String(index);
+    } else if (preferredWorker === saved || saved?.worker_model_id) {
+      workerMissing = true;
+    }
+  }
   $("#lead-model").disabled = models.length === 0;
+  $("#lead-worker-model").disabled = models.length === 0;
   const info = runtimeInfo(runtime);
   const unavailable = info && info.available === false;
   if (unavailable) {
     text($("#model-help"), "This runtime executable is not installed on this machine. Choose an installed runtime before saving.");
   } else if (savedMissing) {
-    text($("#model-help"), "The saved model is no longer in the configured catalog. Choose a configured model before saving or running.");
+    text($("#model-help"), "The saved lead model is no longer in the configured catalog. Choose a configured model before saving or running.");
   } else if (models.length) {
     const selected = modelOptions.get($("#lead-model").value);
     text($("#model-help"), selected?.credential_ready === false && selected?.credential_env
       ? `Set ${selected.credential_env} in the environment that launches Department Studio before running this model. The browser never receives the key.`
-      : "Choose an exact configured model. No model has been selected for you, and listing does not verify a connection.");
+      : "Choose an exact configured lead model. No model has been selected for you, and listing does not verify a connection.");
   } else {
     text($("#model-help"), "Add an OpenAI-compatible provider and model to the configured catalog, then reload models.");
   }
+  const selectedWorker = workerModelOptions.get($("#lead-worker-model").value);
+  text($("#worker-model-help"), workerMissing
+    ? "The saved worker model is no longer configured. Choose another worker model or use the lead model."
+    : selectedWorker
+      ? `Workers use ${selectedWorker.name} · ${selectedWorker.provider} / ${selectedWorker.id}. They run in their own task worktree and cannot post in the room.`
+      : "Workers inherit the lead model until you choose a separate worker model. They run in their own task worktree and cannot post in the room.");
 }
 
 async function loadModels({ saved = null } = {}) {
@@ -799,23 +829,18 @@ function openDepartment(lead = null) {
   text($("#dialog-title"), lead ? "Edit department" : "New department");
   for (const key of ["name", "handle", "role", "workspace"]) $(`#lead-${key}`).value = lead?.[key] || "";
   $("#lead-enabled").checked = lead?.enabled ?? true;
-  document.querySelector(`input[name="permission"][value="${lead?.permission || "discuss"}"]`).checked = true;
   $("#lead-runtime").value = lead?.backend_kind || "pi";
   resetModels("Loading configured models…");
   $("#delete-department").hidden = !lead;
   notice("#form-error");
-  updatePermission();
+  updateSaveState();
   dialog.showModal();
   loadModels({ saved: lead });
 }
 
-function updatePermission() {
-  const develop = document.querySelector('input[name="permission"]:checked').value === "develop";
-  const needsConsent = develop && editing?.permission !== "develop";
-  $("#develop-warning").hidden = !develop;
-  $("#consent-label").hidden = !needsConsent;
-  $("#save-department").disabled = saving || (needsConsent && !$("#develop-consent").checked);
-  text($("#save-department"), needsConsent ? "Enable Develop and save" : "Save department");
+function updateSaveState() {
+  $("#save-department").disabled = saving;
+  text($("#save-department"), "Save department");
 }
 
 function departmentBusy(lead) {
@@ -879,8 +904,6 @@ dialog.addEventListener("close", () => {
   modelRequest?.abort();
   if (folderDialog.open) folderDialog.close();
 });
-document.querySelectorAll('input[name="permission"]').forEach((input) => input.addEventListener("change", updatePermission));
-$("#develop-consent").addEventListener("change", updatePermission);
 
 function renderFolders() {
   if (!folderListing) return;
@@ -965,7 +988,7 @@ $("#load-models").addEventListener("click", () => loadModels({
 }));
 $("#lead-runtime").addEventListener("change", () => {
   renderModels(editing);
-  updatePermission();
+  updateSaveState();
 });
 $("#lead-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -977,6 +1000,7 @@ $("#lead-form").addEventListener("submit", async (event) => {
     notice("#form-error", "The selected runtime is not installed on this machine.");
     return;
   }
+  const workerModel = workerModelOptions.get($("#lead-worker-model").value);
   const body = {
     name: $("#lead-name").value,
     handle: $("#lead-handle").value,
@@ -984,20 +1008,21 @@ $("#lead-form").addEventListener("submit", async (event) => {
     workspace: $("#lead-workspace").value,
     provider: model.provider,
     model_id: model.id,
+    worker_provider: workerModel?.provider || "",
+    worker_model_id: workerModel?.id || "",
     backend_kind: backendKind,
-    permission: document.querySelector('input[name="permission"]:checked').value,
     enabled: $("#lead-enabled").checked,
   };
   if (editing) body.revision = editing.revision;
   saving = true;
-  updatePermission();
+  updateSaveState();
   notice("#form-error");
   try {
     await request(editing ? `/api/leads/${editing.id}` : "/api/leads", { method: editing ? "PATCH" : "POST", body });
     dialog.close();
     await refresh();
   } catch (error) { notice("#form-error", error.message); }
-  finally { saving = false; updatePermission(); }
+  finally { saving = false; updateSaveState(); }
 });
 
 // Theme preference is local to this browser and shared by every project.

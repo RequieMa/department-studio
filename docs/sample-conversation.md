@@ -6,7 +6,7 @@ live conversation**. Your configured models will produce their own responses.
 
 Create or switch to a separate project, then create two departments with your
 own names, handles, roles and models. Choose each workspace with **Browse folders**,
-keep both leads in **Discuss**, then resume the room. Replace `FIRST_HANDLE` and
+leads are Discuss-only by design, then resume the room. Replace `FIRST_HANDLE` and
 `SECOND_HANDLE` with their actual handles before sending the prompts below. No
 departments are built into the app. Durable conclusions belong in the project
 **Records** folder; the chat below stays deliberately short.

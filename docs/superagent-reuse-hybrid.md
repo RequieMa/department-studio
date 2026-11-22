@@ -1,8 +1,11 @@
 # Hybrid: reuse selected dsh-superagent implementation in Department Studio
 
-Status: **proposed, not implemented.** This supersedes the "run one superagent per
-repository as the primary architecture" recommendation. The gateway remains a
-fallback, not the product plan.
+Status: **partially implemented configuration; task/worker execution proposed.**
+The department dialog now selects an optional worker model, leads are Discuss-only,
+and the lead permission switch is gone. Task proposal/issue creation, workers,
+watchdog and GitHub execution are not implemented. This supersedes the "run one
+superagent per repository as the primary architecture" recommendation; the gateway
+remains a fallback.
 
 ## Why this direction
 
@@ -72,8 +75,12 @@ has a concrete allocation and initial design. The proposal contains:
 - links to shared records/docs (exact paths, not pasted documents);
 - whether push/PR creation is authorized, or human approval is required.
 
-Default gate: **the lead proposes; the human confirms dispatch**. A project may later
-enable auto-dispatch for explicitly trusted repos/permissions, but not by default.
+Default gate: **the lead proposes in the room and asks the human for permission and
+feedback**. If the human replies without objection, the lead may create the issue. If
+the human objects or does not answer, nothing is created; there is no silent
+timeout-based auto-dispatch. A project may later enable explicit auto-dispatch for
+trusted repos/permissions, but not by default. This is a room conversation, not a
+separate approval dialog.
 
 The issue body is the execution contract, not the discussion transcript. The room
 shows a compact task card: owner, repo, issue link, stage, blockers and a records link.

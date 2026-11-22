@@ -130,5 +130,5 @@ there is no downgrade procedure.
 
 Automated coverage includes project catalog/lifecycle, project API, record storage
 and bridge, hierarchy store/API and denial, addressing continuity/public notes,
-schema v0-v4 migration, 350 ordinary tests, 21 Chromium UI tests (projects, records, hierarchy toggle,
+schema v0-v4 migration, 352 ordinary tests, 21 Chromium UI tests (projects, records, hierarchy toggle,
 peer-message folding, addressing, theme) and the packaged wheel.

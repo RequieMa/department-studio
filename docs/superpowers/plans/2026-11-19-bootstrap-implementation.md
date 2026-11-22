@@ -54,7 +54,7 @@ Keep modules focused; separate RPC transport from Pi lifecycle and SQLite storag
 
 ### Data and validation
 
-`LeadCreate` contains `name`, `handle`, `role`, `provider`, `model_id`, `workspace`, `enabled` (default true), and `permission` (`discuss` by default or `develop`). `Lead` additionally contains `id`, `conversation_id`, `revision` and runtime status. Never derive IDs from names or handles.
+`LeadCreate` historically contained `name`, `handle`, `role`, `provider`, `model_id`, `workspace`, `enabled` and `permission`. **Current:** the lead permission switch is removed (leads are Discuss-only), optional `worker_provider`/`worker_model_id` were added, and `Lead` additionally contains `id`, `conversation_id`, `revision` and runtime status. Never derive IDs from names or handles.
 
 - Display name: trimmed, 1–80 characters, Unicode permitted.
 - Handle: normalize to lowercase, match `[a-z][a-z0-9_-]{0,31}`, unique; reject `all`, `you`, `system`.

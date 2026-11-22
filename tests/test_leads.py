@@ -43,7 +43,6 @@ def test_user_names_and_rename_preserve_identity(store, tmp_path):
         ("provider", "x" * 201),
         ("model_id", ""),
         ("workspace", "/missing/department-studio-directory"),
-        ("permission", "admin"),
         ("backend_kind", "a2a"),
     ],
 )
@@ -119,3 +118,40 @@ def test_runtime_change_starts_a_fresh_native_conversation(store, tmp_path):
     assert changed.conversation_id != lead.conversation_id
     refs = {item["conversation_id"] for item in store.list_session_refs(lead.id)}
     assert {lead.conversation_id, changed.conversation_id} <= refs
+
+
+def test_worker_model_is_optional_but_paired(store, tmp_path):
+    lead = create_lead(store, tmp_path)
+    assert (lead.worker_provider, lead.worker_model_id) == ("", "")
+    changed = store.update_lead(
+        lead.id,
+        lead.revision,
+        {"worker_provider": "test", "worker_model_id": "model-b"},
+    )
+    assert (changed.worker_provider, changed.worker_model_id) == ("test", "model-b")
+    with pytest.raises(Invalid):
+        create_lead(store, tmp_path, worker_provider="test")
+    with pytest.raises(Invalid):
+        create_lead(store, tmp_path, worker_model_id="model-b")
+
+
+def test_legacy_permission_setting_is_ignored(store, tmp_path):
+    import json
+
+    lead = create_lead(store, tmp_path)
+    settings = json.loads(
+        store._db.execute("SELECT settings FROM leads WHERE id=?", (lead.id,)).fetchone()[
+            "settings"
+        ]
+    )
+    settings["permission"] = "develop"
+    settings.pop("worker_provider", None)
+    settings.pop("worker_model_id", None)
+    with store._transaction():
+        store._db.execute(
+            "UPDATE leads SET settings=? WHERE id=?",
+            (json.dumps(settings), lead.id),
+        )
+    loaded = store.get_lead(lead.id)
+    assert not hasattr(loaded, "permission")
+    assert (loaded.worker_provider, loaded.worker_model_id) == ("", "")

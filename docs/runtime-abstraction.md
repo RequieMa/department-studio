@@ -102,7 +102,7 @@ reported as idle.
 |---|---|---|---|---|---|
 | Pi | RPC child with generated `PI_CODING_AGENT_DIR` | Pi `--tools` allowlist | exact conversation UUID; Pi session file stored as a reference | `clear_queue` + `abort`, then terminate | Pi extension `send_room_message` |
 | Claude Code | `claude -p --output-format stream-json` | `--tools` + `--allowedTools` | `--session-id` first run, `--resume` afterwards | close stdin, terminate process group | stdio MCP server |
-| DeepSeek Harness | `dsh --profile headless --json` | per-run profile patch; Discuss disables write/edit/shell tools | `--session-id` after the first reported session | close stdin, terminate process group | stdio MCP server |
+| DeepSeek Harness | `dsh --profile headless --json` | per-run profile patch; leads disable write/edit/shell tools | `--session-id` after the first reported session | close stdin, terminate process group | stdio MCP server |
 
 ### Pi
 
@@ -131,10 +131,10 @@ sandbox.
 
 The adapter writes a temporary profile patch that selects
 `provider: deepseek-official` and the catalog model, appends the operating
-instructions, mounts `@deepseek-ai/dsh-mcp-client` for the room bridge, and (for
-Discuss) disables `tool-bash`, `tool-pwsh`, `tool-jobs`, `tool-web`, `tool-subagent`,
-`tool-workflow` and write/edit in `tool-fs`. Develop uses
-`DSH_PERMISSION_MODE=danger-full-access`; Discuss uses `read-only`. The first run
+instructions, mounts `@deepseek-ai/dsh-mcp-client` for the room bridge, and disables
+`tool-bash`, `tool-pwsh`, `tool-jobs`, `tool-web`, `tool-subagent`, `tool-workflow`
+and write/edit in `tool-fs`; it uses `DSH_PERMISSION_MODE=read-only`. Future worker
+runs may use development tools; the lead path never does. The first run
 lets the harness report its session ID; later runs pass `--session-id`. The adapter
 uses the JSON `session`/`final` events and the process exit code; stderr is never
 copied into the room.
@@ -162,8 +162,10 @@ The same bridge exposes bounded `list_records`, `read_record` and `write_record`
 tools. Every project has its own records folder; see
 [project rooms, records, hierarchy and default addressing](projects-records-hierarchy.md).
 Claude Code also receives the folder through `--add-dir`; Pi receives the absolute
-path in its instructions; DeepSeek Harness reads are unconfined and its Develop mode
-uses full-access writes. Record tools work even in Discuss, so every department can
+path in its instructions; DeepSeek Harness reads are unconfined in lead mode and
+record tools work through the MCP bridge. Record writes are available to leads through
+the bridge even though shell/file editing is disabled; future workers can use
+development tools in their own worktree. Every department can
 leave an audit note without shell access.
 
 ## Legacy and migration behavior
@@ -180,7 +182,7 @@ leave an audit note without shell access.
 
 ## Verification and remaining live checks
 
-Automated coverage uses synthetic subprocesses and temporary data: **350 ordinary
+Automated coverage uses synthetic subprocesses and temporary data: **352 ordinary
 tests, 21 Chromium browser tests and 7 Node bridge tests** passed at the current
 checkpoint.
 
@@ -189,7 +191,7 @@ checkpoint.
 - Pi generated catalog isolation and RPC behavior;
 - Claude init/bridge-success gate, stream parsing, resume, tool sets, error
   sanitization and cancellation;
-- DeepSeek patch content, session adoption, Discuss/Develop restrictions, exit-code
+- DeepSeek patch content, session adoption, lead restrictions, exit-code
   handling and cancellation;
 - MCP handshake, tool call, local validation, HTTP failure sanitization and
   loopback/credential rejection.

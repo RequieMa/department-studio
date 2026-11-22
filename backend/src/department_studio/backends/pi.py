@@ -42,7 +42,7 @@ RESOURCE_FLAGS = (
     "--no-context-files",
     "--offline",
 )
-DISCUSS_TOOLS = (
+LEAD_TOOLS = (
     "read",
     "grep",
     "find",
@@ -394,9 +394,7 @@ class PiBackend:
             session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             session_dir.chmod(0o700)
             agent_dir = self._agent_directory(session_dir, selection, snapshots)
-            tools = list(DISCUSS_TOOLS)
-            if lead.permission == "develop":
-                tools.extend(["bash", "edit", "write"])
+            tools = list(LEAD_TOOLS)
             extension = snapshots.enter_context(self._bridge_snapshot(session_dir))
             rpc = self._client(
                 [

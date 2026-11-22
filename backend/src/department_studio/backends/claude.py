@@ -26,8 +26,7 @@ from department_studio.config import Settings
 from department_studio.instructions import ROOM_TOOL_MCP, agent_instructions
 from department_studio.models import ModelCatalog
 
-DISCUSS_TOOLS = ("Read", "Grep", "Glob")
-DEVELOP_TOOLS = ("Read", "Edit", "Write", "Bash", "Grep", "Glob")
+LEAD_TOOLS = ("Read", "Grep", "Glob")
 ROOM_BRIDGE_SERVER = "room"
 RUNTIME_FAILURE = "Claude Code failed. Check the selected model and local runtime setup."
 BRIDGE_FAILURE = "The room bridge did not initialize; no prompt was sent."
@@ -109,10 +108,6 @@ class ClaudeBackend:
             }
         }
 
-    @staticmethod
-    def _tools(permission: str) -> tuple[str, ...]:
-        return DEVELOP_TOOLS if permission == "develop" else DISCUSS_TOOLS
-
     def _arguments(
         self,
         request: RunRequest,
@@ -121,7 +116,7 @@ class ClaudeBackend:
         instructions: str,
     ) -> list[str]:
         lead = request.lead
-        tools = self._tools(lead.permission)
+        tools = LEAD_TOOLS
         allowed = ",".join(
             (
                 *tools,

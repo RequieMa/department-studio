@@ -119,7 +119,6 @@ h3 { font-weight: 650; letter-spacing: -.2px; }
 .context-note { margin-top: 9px; font-size: 11px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .context-note.warning { color: var(--warning); }
 .permission-badge { font-size: 10px; padding: 3px 6px; border-radius: 4px; background: var(--surface-muted); }
-.permission-badge.develop { color: var(--warning); background: var(--warning-soft); }
 .edit-lead { position: absolute; right: 7px; top: 10px; width: 27px; height: 27px; color: var(--muted); border: none; border-radius: 5px; background: transparent; font-size: 18px; }
 .edit-lead:hover { background: var(--background); }
 .add-department { color: var(--teal); background: var(--surface); border: 1px dashed var(--line-strong); border-radius: 7px; width: 100%; padding: 12px 8px; margin-top: 16px; font-size: 12px; font-weight: 600; }
@@ -258,14 +257,6 @@ dialog::backdrop { background: var(--overlay); backdrop-filter: blur(2px); }
 .model-heading .eyebrow { margin: 0; }
 fieldset { border: 0; margin: 21px 0 10px; padding: 0; min-width: 0; }
 legend { font-size: 12px; font-weight: 600; margin-bottom: 10px; padding: 0; }
-.permission-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 13px; }
-.permission-options > label { display: flex; gap: 9px; align-items: flex-start; border: 1px solid var(--line); border-radius: 7px; padding: 12px 10px; cursor: pointer; }
-.permission-options > label:has(:checked) { border-color: var(--teal); background: var(--teal-soft); }
-.permission-options strong { font-size: 12px; font-weight: 600; }
-.permission-options small { display: block; font-size: 10px; color: var(--muted); line-height: 1.6; margin-top: 4px; }
-.check-label { display: flex !important; flex-direction: row !important; align-items: flex-start; gap: 9px !important; font-size: 11px !important; font-weight: 400 !important; line-height: 1.7; }
-.develop-warning { background: var(--warning-soft); color: var(--warning); padding: 12px; border: 1px solid var(--warning-border); border-radius: 7px; font-size: 11px; line-height: 1.7; }
-.develop-warning label { margin-top: 10px; }
 .availability { margin-top: 17px; }
 .dialog-actions { border-top: 1px solid var(--line); justify-content: flex-end; gap: 10px; padding-top: 18px; margin-top: 20px; }
 .dialog-actions-spacer { flex: 1; }
@@ -301,7 +292,7 @@ legend { font-size: 12px; font-weight: 600; margin-bottom: 10px; padding: 0; }
   .message-header { flex-wrap: nowrap; gap: 9px; }.avatar { width: 32px; height: 32px; }.message-author { font-size: 14px; }.message-text { padding-left: 0; font-size: 15px; }.markdown-code-block { padding: 11px 12px; }.markdown-table-wrap th, .markdown-table-wrap td { padding: 7px 9px; }.recipient-label, .delivery-list, .message-notice { margin-left: 0; }
   .composer-actions > span { font-size: 9px; }.primary { padding-inline: 13px; }.page-footer { align-items: flex-start; line-height: 1.6; }
   .page-footer span:last-child { max-width: 155px; text-align: right; }dialog { padding: 23px 20px; max-height: calc(100dvh - 24px); }
-  .form-grid { gap: 10px; }.permission-options { gap: 8px; }.permission-options > label { gap: 7px; padding: 10px 8px; }
+  .form-grid { gap: 10px; }
   .workspace-field { flex-wrap: wrap; }.workspace-field button { width: 100%; }
 }
 /* Persistent task navigation is independent of transient delivery history. */

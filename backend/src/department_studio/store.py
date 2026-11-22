@@ -261,6 +261,11 @@ class Store(TaskStore):
             if status is None and context:
                 status = "stopping" if context[0] == "stopping" else "preparing"
             settings = json.loads(row["settings"])
+            # Legacy lead settings may contain the removed permission switch and
+            # may predate worker model selection.
+            settings.pop("permission", None)
+            settings.setdefault("worker_provider", "")
+            settings.setdefault("worker_model_id", "")
             return Lead(
                 **settings,
                 id=row["id"],

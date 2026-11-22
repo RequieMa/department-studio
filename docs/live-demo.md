@@ -59,7 +59,7 @@ For each department:
    it does not silently substitute another one.
 4. Click **Load models** and choose an exact model. Listing reads the catalog only;
    it does not contact a provider or start a runtime.
-5. Keep **Discuss** for this demonstration. Do not enable Develop.
+5. Leads are always Discuss-only; optionally choose a separate worker model for future worker execution.
 6. Save both departments while the room is paused.
 
 There is no default department, runtime or model. A saved model that is no longer

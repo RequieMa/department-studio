@@ -95,14 +95,13 @@ async def test_headless_patch_selects_model_bridge_and_discuss_tools(
     await backend.close()
 
 
-async def test_resume_and_develop_patch(backend_factory, request_factory, tmp_path):
+async def test_resume_keeps_discuss_restrictions(backend_factory, request_factory, tmp_path):
     backend = backend_factory()
     first = request_factory()
     outcome = await backend.run(first, no_events)
     resumed = replace(
         first,
         id="run-2",
-        lead=replace(first.lead, permission="develop"),
         native_session_ref=outcome.native_session_ref,
     )
     assert (await backend.run(resumed, no_events)).state == "completed"
@@ -112,8 +111,8 @@ async def test_resume_and_develop_patch(backend_factory, request_factory, tmp_pa
     assert launches[1]["argv"][launches[1]["argv"].index("--session-id") + 1] == (
         outcome.native_session_ref
     )
-    assert launches[1]["permission_mode"] == "danger-full-access"
-    assert "tool-bash" not in launches[1]["patch"]
+    assert launches[1]["permission_mode"] == "read-only"
+    assert "tool-bash" in launches[1]["patch"]
     await backend.close()
 
 

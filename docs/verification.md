@@ -71,7 +71,7 @@ The ordinary suite covers:
 - Atomic message/delivery transactions, concurrent allowance reservations, all-or-none fan-out, idempotency receipts and conflicts for changed retry bodies.
 - Two concurrent leads, one delivery per lead, bounded recent context, human-scope attribution, timeouts, token revocation, late results and confirmed/unconfirmed stops.
 - Strict JSONL framing, split UTF-8/CRLF records, Unicode separators, correlated responses, malformed output, EOF, stderr draining, startup failure, prompt rejection and delayed settling.
-- Exact Pi model/session verification, distinct per-lead sessions, permission-specific tool flags, disabled resource discovery, mandatory bridge readiness, metadata-only enumeration and private-content exclusion.
+- Exact Pi model/session verification, distinct per-lead sessions, lead-only Discuss tool flags, disabled resource discovery, mandatory bridge readiness, metadata-only enumeration and private-content exclusion.
 - Browser versus runtime authorization, sender spoofing, Host/Origin validation, safe error responses, stale generations, optimistic edits and paused restart recovery.
 - Owner-only directory listing, hidden and Unicode folder names, canonical symlink targets, empty folders, root navigation, invalid paths and sanitized access errors. Files are excluded and listing does not start a runtime.
 - A fake Pi subprocess using the real authenticated HTTP bridge to address a second lead, whose final response completes the same persisted chain. This uses real subprocess/HTTP/SQLite paths with **synthetic inference**.
@@ -81,7 +81,7 @@ The Node tests register the real TypeScript extension against a mock Pi API and 
 
 ## Browser and visual verification
 
-The browser suite creates `星图 Studio / @atlas` and `Canvas / @canvas` with independent roles/models, renames the first department, addresses its new handle, rejects its old handle and verifies historical attribution. It also checks public-only notes, literal HTML rendering, focused form/draft preservation across polling, explicit Develop consent, stop confirmation, offline reconnect, tab reload and mobile dialog focus.
+The browser suite creates `星图 Studio / @atlas` and `Canvas / @canvas` with independent roles/models, selects an optional worker model, renames the first department, addresses its new handle, rejects its old handle and verifies historical attribution. It also checks public-only notes, literal HTML rendering, focused form/draft preservation across polling, lead Discuss-only configuration, stop confirmation, offline reconnect, tab reload and mobile dialog focus.
 
 A separate browser case verifies that an uncertain recovered execution is not labeled confirmed idle. This case injects the recovered HTTP snapshot; storage/restart behavior is verified separately by the ordinary suite.
 
@@ -174,7 +174,7 @@ The user explicitly authorized **“Continue TDD here and report the missing ind
 The user selected live-demo preparation as the next step. The production server
 was checked with a separate `.department-studio/live-demo` data directory. Its
 authenticated state endpoint confirmed an empty, paused room. A Playwright check
-verified fragment authentication, the empty setup screen, Discuss as the default,
+verified fragment authentication, the empty setup screen, lead Discuss-only configuration,
 and model loading with no mutating HTTP requests or browser errors. The rendered
 setup was inspected in git-ignored `artifacts/live-demo-setup.png`. The empty model
 list was traced to the read-only configuration failure described above. No prompt
@@ -184,11 +184,11 @@ terminal. The concrete catalog/runtime setup and conversation sequence is in
 
 After the user chooses and configures real models and explicitly authorizes inference:
 
-1. Start Studio and create two departments with user-selected names, roles, models and existing workspaces. Keep both in Discuss initially.
+1. Start Studio and create two departments with user-selected names, roles, lead models, optional worker models and existing workspaces. Leads are Discuss-only by design.
 2. Resume and send one addressed request asking a lead to use `send_room_message` to consult the second lead. Verify both real responses, attributed peer delivery and distinct sessions. An ordinary note must not start another run.
 3. Pause during authorized work and verify confirmed idle/exit, rejection of late posts and no replay on resume. Inspect any edits or other side effects personally.
 4. Restart the service, use the new launch URL, verify durable attribution and paused recovery, then send a fresh request only when ready.
-5. After independent review, save a Git baseline, select separate workspaces and explicitly enable Develop only for a narrow self-development request. Test and review changes before restarting the running application. Authentication, permission and cancellation changes require an explicit human request and review.
+5. After independent review, save a Git baseline and select separate workspaces. Lead self-development cannot edit files; a future worker/task flow with a separate worker model is required for a narrow development request. Test and review changes before restarting the running application. Authentication, permission and cancellation changes require an explicit human request and review.
 
 No live collaboration, unrestricted application agents, self-development run, A2A implementation or deployment was started as part of this verification.
 
@@ -197,7 +197,7 @@ No live collaboration, unrestricted application agents, self-development run, A2
 
 The combined branch passed:
 
-- 350 ordinary tests with temporary SQLite, synthetic backends and fixture Pi,
+- 352 ordinary tests with temporary SQLite, synthetic backends and fixture Pi,
   Claude Code and DeepSeek Harness subprocesses.
 - 21 Chromium browser tests against the owned synthetic server, including task
   branches/decisions, the runtime/model dialog, project history/switch/delete,

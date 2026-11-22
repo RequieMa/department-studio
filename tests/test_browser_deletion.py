@@ -61,7 +61,6 @@ def test_real_endpoint_deletion_preserves_history_and_handles_stale_and_busy(bro
                             "model_id",
                             "workspace",
                             "enabled",
-                            "permission",
                             "backend_kind",
                         )
                     },

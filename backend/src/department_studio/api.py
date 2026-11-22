@@ -51,15 +51,15 @@ class LeadBody(StrictBody):
     role: str = Field(max_length=8000)
     provider: str = Field(max_length=200)
     model_id: str = Field(max_length=200)
+    worker_provider: str = Field(default="", max_length=200)
+    worker_model_id: str = Field(default="", max_length=200)
     workspace: str = Field(max_length=4096)
     enabled: bool = True
-    permission: Literal["discuss", "develop"] = "discuss"
     backend_kind: Literal["pi", "claude", "deepseek"] = "pi"
 
 
 class LeadPatch(LeadBody):
     enabled: bool
-    permission: Literal["discuss", "develop"]
     revision: int = Field(ge=1)
 
 

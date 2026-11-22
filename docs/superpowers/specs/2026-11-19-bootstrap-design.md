@@ -10,6 +10,7 @@ Status: **approved**, with the user's addition that departments are named during
 > | Original scope | Current implementation |
 > |---|---|
 > | One project and one room | Multiple isolated project rooms with history/switch/delete |
+| Lead Discuss/Develop permission switch | Leads fixed Discuss; optional worker model; workers are the only development agents |
 > | Pi only | Pi, Claude Code and DeepSeek Harness adapters behind one contract |
 > | Runtime/provider enumeration | Studio-owned OpenAI-compatible model catalog (DeepSeek V4 Flash/Pro bundled) |
 > | Unaddressed human message is a public note | No-`@` message continues the last explicit addressees; explicit public-note opt-out |
@@ -55,7 +56,7 @@ A lead has a stable ID independent of its native session, and these editable set
 - Exact catalog provider and model ID; Studio owns the catalog (later extension).
 - Existing local workspace/repository directory.
 - Enabled/paused status.
-- Permission mode: **Discuss** or **Develop**, defaulting to Discuss.
+- Permission mode: **Discuss** or **Develop**, defaulting to Discuss. **Current implementation:** leads are always Discuss; the permission switch is removed, and workers (when implemented) are the development agents. An optional worker model is configured per department.
 
 First run starts with no departments. The user names each department and assigns its handle, role, model and workspace. Backend, Frontend and QA are examples only: no department names, roles or routing are hard-coded. A department called “Foundry” can perform backend work, and “Canvas” can perform frontend work.
 
@@ -181,7 +182,7 @@ Per-process credentials are regenerated on restart. Do not commit databases, ses
 
 Keep one page with three clear functions:
 
-1. **Leads:** list, create/edit, runtime/model/workspace selection, permission mode and status.
+1. **Leads:** list, create/edit, runtime/lead model/optional worker model/workspace selection and status. The lead permission switch is removed.
 2. **Room:** chronological attributed messages, visible recipients, human composer with mentions and default-addressing opt-out, peer-message folding, and explicit error/limit notices.
 3. **Control:** room paused/running state, pause/stop and resume actions, with stopping versus confirmed-idle states distinguished.
 4. **Current extensions:** project history, durable records, department hierarchy, ongoing tasks/decisions, and a local light/dark theme.

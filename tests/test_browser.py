@@ -74,7 +74,6 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
         page, "Canvas", "canvas", "Design the interface", "Synthetic B · test / model-b"
     )
     original = snapshot()["leads"][0]
-    assert original["permission"] == "discuss"
     assert len({lead["conversation_id"] for lead in snapshot()["leads"]}) == 2
 
     composer = page.get_by_label("Message to the room", exact=True)
@@ -131,17 +130,15 @@ def test_bootstrap_setup_routing_controls_reconnect_and_draft_preservation(brows
     assert len(snapshot()["deliveries"]) == before
 
     page.get_by_role("button", name="Edit Foundry", exact=True).click()
-    dialog.get_by_label("Develop", exact=True).check()
-    expect(
-        dialog.get_by_text("These tools run with your local account's access.", exact=False)
-    ).to_be_visible()
-    expect(
-        dialog.get_by_role("button", name="Enable Develop and save", exact=True)
-    ).to_be_disabled()
-    dialog.get_by_label("I allow local editing, writing and shell for this department.").check()
-    dialog.get_by_role("button", name="Enable Develop and save", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Edit department")
+    worker_model = dialog.get_by_label("Worker model", exact=True)
+    expect(worker_model).to_be_enabled()
+    worker_model.select_option(label="Synthetic B · test / model-b")
+    dialog.get_by_role("button", name="Save department", exact=True).click()
     expect(dialog).not_to_be_visible()
-    assert snapshot()["leads"][0]["permission"] == "develop"
+    worker_selected = snapshot()["leads"][0]
+    assert worker_selected["worker_provider"] == "test"
+    assert worker_selected["worker_model_id"] == "model-b"
 
     composer.fill("@forge synthetic wait")
     page.get_by_role("button", name="Send message", exact=True).click()
@@ -226,7 +223,6 @@ def test_resume_context_progress_cancel_and_fresh_handoff_are_visible(browser):
         "provider": "test",
         "model_id": "model-a",
         "workspace": str(ROOT),
-        "permission": "discuss",
         "enabled": True,
         "status": "idle",
         "revision": 1,
@@ -397,7 +393,6 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
                 "model_id": "model-a",
                 "workspace": "/workspace",
                 "enabled": True,
-                "permission": "discuss",
                 "status": "running",
             },
             {
@@ -408,7 +403,6 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
                 "model_id": "model-b",
                 "workspace": "/workspace",
                 "enabled": True,
-                "permission": "discuss",
                 "status": "queued",
             },
             {
@@ -419,7 +413,6 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
                 "model_id": "model-c",
                 "workspace": "/workspace",
                 "enabled": False,
-                "permission": "discuss",
                 "backend_kind": "pi",
                 "status": "idle",
             },
@@ -432,7 +425,6 @@ def test_mention_autocomplete_is_caret_aware_accessible_and_composition_safe(bro
                 "workspace": "/workspace",
                 "enabled": True,
                 "deleted": True,
-                "permission": "discuss",
                 "backend_kind": "pi",
                 "status": "idle",
             },
@@ -508,7 +500,6 @@ def test_recipient_context_wraps_and_running_activity_is_not_typing(browser):
             "model_id": "fixture",
             "workspace": "/workspace",
             "enabled": True,
-            "permission": "discuss",
             "status": "running",
         }
         for number in range(8)
@@ -626,7 +617,6 @@ def test_composer_enter_sends_shift_enter_adds_newlines_and_keeps_drafts(browser
                 "model_id": "model-a",
                 "workspace": "/workspace",
                 "enabled": True,
-                "permission": "discuss",
                 "backend_kind": "pi",
                 "status": "idle",
             }
@@ -746,7 +736,6 @@ def test_delete_department_confirmation_uses_revision_and_blocks_busy_department
         "model_id": "model-a",
         "workspace": "/workspace",
         "enabled": True,
-        "permission": "discuss",
         "status": "idle",
         "revision": 4,
     }
