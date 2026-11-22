@@ -25,6 +25,7 @@ test counts as current.
 | Browser UI setup/room | Complete | 21 Chromium tests |
 | Runtime/model catalog extension | Complete | 352 ordinary tests; no qgenie in source |
 | Department lead/worker model config | Complete | leads Discuss-only; optional worker model; worker execution still proposed |
+| External project/CLI launch | Complete and externally validated | CLI now uses `ProjectManager`; new project creation verified in a `/tmp` external workspace |
 | Ongoing tasks + decisions | Complete and merged | schema v3, API/UI/browser tests |
 | Projects/history/switch/delete | Complete | isolated Store/Service per project; API/UI/browser tests |
 | Records + bridge tools | Complete | owner API/UI, Pi extension and MCP tools; 512 KiB bounded records |
@@ -66,6 +67,7 @@ counted as "all plan checkboxes green"; they remain process gaps.
 | `docs/worker-teams-design.md` | Proposed design | worker teams, watchdog, multi-repo and A2A evaluation; not implemented |
 | `docs/superagent-repo-gateway.md` | Fallback validation | one superagent per repo, GitHub issue/comment mirror, supervisor; not primary |
 | `docs/superagent-reuse-hybrid.md` | Preferred proposal | port selected superagent Ticket/worker/health/GitHub patterns into Studio; not implemented |
+| `docs/getting-started.md` | Current usage guide | external project, Web status, validation checklist |
 | `docs/research/a2a-and-runtime-adapters.md` | Research, implementation note added | A2A still deferred |
 | `docs/frontend-integration.md` | Historical evidence | pre-integration candidate; not current |
 | `docs/relaunch-integration.md` | Historical evidence | v1-era relaunch; not current |

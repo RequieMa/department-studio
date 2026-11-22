@@ -126,8 +126,9 @@ browser/package results and the remaining dirty-root merge blocker.
 
 Before human relaunch: stop all writers, back up the entire actual persistent data
 and native sessions, use the same absolute `--data-dir`, and do not downgrade after
-migration. The current CLI opens Store before binding, so a failed port bind may
-already migrate data. No live data access, migration, restart or model calls were
-performed as part of development. The proposed progress watchdog is deferred in
+migration. The current CLI binds the port before opening the project catalog, so a
+failed port bind exits before migrating project data. A real-data copy was migrated
+during verification; the live directory was backed up but not migrated, restarted or
+modified by the implementation. No live model calls were part of this check. The proposed progress watchdog is deferred in
 [`docs/watchdog-follow-up.md`](../docs/watchdog-follow-up.md); current deadline and
 stop behavior remain unchanged.

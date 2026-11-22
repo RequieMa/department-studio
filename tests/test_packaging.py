@@ -209,6 +209,14 @@ async def test_wheel_cli_serves_authenticated_room_outside_repository(built_whee
                     "deliveries": [],
                 }
                 headers = {"Authorization": "Bearer " + owner}
+                created = await client.post(
+                    "/api/projects", json={"name": "External validation"}, headers=headers
+                )
+                assert created.status_code == 201
+                new_project = created.json()["project"]
+                projects = (await client.get("/api/projects", headers=headers)).json()
+                assert len(projects["projects"]) == 2
+                assert projects["active_id"] == new_project["id"]
                 assert (await client.get("/api/tasks", headers=headers)).json() == {
                     "tasks": [],
                     "next_cursor": None,

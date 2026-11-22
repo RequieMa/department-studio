@@ -6,7 +6,7 @@ This is the communication bootstrap described in `docs/superpowers/specs/2026-11
 
 **Live model-backed collaboration has not been demonstrated with the new adapters.** Automated replies are explicitly synthetic test fixtures. A bounded live attempt on 2026-11-21 was blocked by a read-only Pi config directory, an invalid DeepSeek key (HTTP 401), and a Claude Code smoke run that did not finish; no success is claimed. See `docs/runtime-abstraction.md`, `docs/verification.md` and the [documentation status matrix](docs/documentation-status.md) for the contract, evidence and remaining checks.
 
-For the prepared two-department live demonstration, follow `docs/live-demo.md`.
+For using the app from a separate project (including external workspace/data layout, Web chat status and a validation checklist), start with [using Department Studio from another project](docs/getting-started.md). For the prepared two-department live demonstration, follow `docs/live-demo.md`.
 The proposed lead→worker→watchdog→multi-repository architecture and A2A evaluation are in [worker teams design](docs/worker-teams-design.md); they are not implemented yet.
 It covers provider readiness, user-chosen setup, the explicit peer-request prompt,
 and the evidence needed before calling the demonstration successful.
@@ -122,7 +122,7 @@ Instructions target that node's stable department ID; mentions inside them do no
 
 **Run Activity** shows only explicit unresolved, currently actionable human requests—not routine run completions or completion toasts. Persisted single-choice requests present radio options and atomically record the selected choice with a public task follow-up. Request authoring is available through the **owner API only** in v1; departments do not automatically create selectors from their prose, so an empty Activity feed is normal. Closed/unavailable targets retain decision history in task details but leave the actionable feed.
 
-See [backend/TASKS.md](backend/TASKS.md) for APIs, idempotency, lifecycle, pagination and migration details. Context maintenance, tasks and hierarchy now share **schema v4**: v1 adds deletion, v2 adds context checks, v3 adds tasks, and v4 adds the department hierarchy plus default-addressing state. Stop writers and back up the full persistent data/native sessions before upgrading; use the same absolute data directory and do not downgrade afterward. A port-bind failure does not guarantee the database was untouched: the current CLI opens Store before binding.
+See [backend/TASKS.md](backend/TASKS.md) for APIs, idempotency, lifecycle, pagination and migration details. Context maintenance, tasks and hierarchy now share **schema v4**: v1 adds deletion, v2 adds context checks, v3 adds tasks, and v4 adds the department hierarchy plus default-addressing state. Stop writers and back up the full persistent data/native sessions before upgrading; use the same absolute data directory and do not downgrade afterward. The current CLI reserves the port before opening the project catalog, so a port-bind failure exits before touching project data.
 
 ## Lead tools, worker models and manual continuation
 

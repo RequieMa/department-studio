@@ -96,6 +96,7 @@ permission/authentication/cancellation change or watchdog implementation is incl
 Before a human-controlled upgrade, stop all writers and back up the entire actual
 persistent directory and native sessions. Use the same absolute `--data-dir`.
 Combined schema v4 is additive but there is no downgrade procedure. The existing CLI
-opens Store before binding, so failed startup may still have migrated a database.
+binds the port before opening the project catalog, so failed startup exits before
+migrating a database.
 See [the task contract](../backend/TASKS.md) and
 [the deferred watchdog design](watchdog-follow-up.md).
