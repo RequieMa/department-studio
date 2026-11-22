@@ -36,7 +36,7 @@ test counts as current.
 | A2A client/server | **Deferred** by approved scope | not implemented |
 | Progress watchdog | **Deferred** | `docs/watchdog-follow-up.md`; current 300s deadline unchanged |
 | Full worker fleet / ownership transfer | **Proposed, not implemented** | [worker teams design](worker-teams-design.md); current tasks are human-facing metadata |
-| Multi-repository / GitHub orchestration | **Proposed, not implemented** | phase C in the worker-teams design |
+| Multi-repository / GitHub orchestration | **Proposed, not implemented** | phase C in the worker-teams design; superagent-per-repo gateway validated separately |
 | A2A | **Evaluated; deferred** | [evaluation section](worker-teams-design.md#7-a2a-evaluation) |
 
 Implementation-plan checkboxes marked unchecked are the per-task **review/commit
@@ -63,6 +63,7 @@ counted as "all plan checkboxes green"; they remain process gaps.
 | `BRIEF.md` | Original brief; status updated | scope history, not current verification |
 | `docs/watchdog-follow-up.md` | Deferred design | not implemented |
 | `docs/worker-teams-design.md` | Proposed design | worker teams, watchdog, multi-repo and A2A evaluation; not implemented |
+| `docs/superagent-repo-gateway.md` | Validation/proposal | one superagent per repo, GitHub issue/comment mirror, supervisor; not implemented |
 | `docs/research/a2a-and-runtime-adapters.md` | Research, implementation note added | A2A still deferred |
 | `docs/frontend-integration.md` | Historical evidence | pre-integration candidate; not current |
 | `docs/relaunch-integration.md` | Historical evidence | v1-era relaunch; not current |
