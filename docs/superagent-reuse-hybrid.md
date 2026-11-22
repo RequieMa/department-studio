@@ -209,18 +209,22 @@ not block the worker/team work on it.
    live issue.
 6. **Later:** multi-repo worktrees/PR/CI, Feishu channel, A2A evaluation.
 
-## Open decisions
+## Decisions recorded
 
-1. Port selected modules to Python (recommended) vs a TypeScript sidecar importing
-   superagent code.
-2. Task issue creation: human confirmation by default (recommended) vs lead
-   auto-dispatch per repo/project setting.
-3. Worker model: per-department worker model config vs inherit lead model.
-4. Worktree layout/root and retention.
-5. GitHub identity for issue creation: project orchestration account vs each
-   department's agent account.
-6. Which repo(s) and agent account are safe for the first live demo.
-7. A2A: keep deferred.
+1. **Python semantic port**, using `uv` only. No TypeScript sidecar for the first
+   demo.
+2. **Task issue permission:** the lead asks in the room for permission and opinion.
+   If the human replies without objection/approves, the lead may create the issue.
+   If the human objects or does not answer, nothing is created; no silent
+   timeout-based dispatch by default. Implementation pending.
+3. **Worker model:** configurable per department in the detail dialog, optional,
+   defaulting to the lead model. Implemented as configuration; worker execution is
+   not implemented.
+4. **Worktree layout/root and retention:** still open.
+5. **GitHub identity for issue creation:** still open; the dedicated
+   `requiema_rig@163.com` agent account login is pending browser authorization.
+6. **First live demo repo:** still open; use a throwaway private repo.
+7. **A2A:** deferred.
 
 No code is changed by this proposal. The first implementation step should be Phase 1
 with failing tests and a schema design reviewed before migration.
