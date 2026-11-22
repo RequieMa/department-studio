@@ -63,7 +63,8 @@ counted as "all plan checkboxes green"; they remain process gaps.
 | `BRIEF.md` | Original brief; status updated | scope history, not current verification |
 | `docs/watchdog-follow-up.md` | Deferred design | not implemented |
 | `docs/worker-teams-design.md` | Proposed design | worker teams, watchdog, multi-repo and A2A evaluation; not implemented |
-| `docs/superagent-repo-gateway.md` | Validation/proposal | one superagent per repo, GitHub issue/comment mirror, supervisor; not implemented |
+| `docs/superagent-repo-gateway.md` | Fallback validation | one superagent per repo, GitHub issue/comment mirror, supervisor; not primary |
+| `docs/superagent-reuse-hybrid.md` | Preferred proposal | port selected superagent Ticket/worker/health/GitHub patterns into Studio; not implemented |
 | `docs/research/a2a-and-runtime-adapters.md` | Research, implementation note added | A2A still deferred |
 | `docs/frontend-integration.md` | Historical evidence | pre-integration candidate; not current |
 | `docs/relaunch-integration.md` | Historical evidence | v1-era relaunch; not current |

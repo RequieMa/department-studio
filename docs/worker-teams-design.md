@@ -5,13 +5,12 @@ original product intent: each department lead talks to the human, decomposes acc
 work into small executable/verifiable tasks, and delegates them to workers. It also
 evaluates the watchdog and A2A boundary against the local DSH superagent reference.
 
-> **Validated alternative (2026-11-22):** if each repository can run its own
-> `dsh-superagent`, prefer the thinner [superagent-per-repository gateway](superagent-repo-gateway.md)
-> over rebuilding worker pools/watchdog here. That gateway still needs an issue
-> dispatcher, GitHub comment mirror and external supervisor; superagent's conversation
-> is GitHub Issues/PRs, not a chat API, and it has no generic idle/spin watchdog.
-> The host-mediated design below remains the fallback for repositories/runtimes that
-> cannot use dsh-superagent.
+> **Updated direction (2026-11-22):** do not run one superagent per repo as the primary
+> architecture. The preferred plan is the [hybrid reuse of selected superagent
+> implementation](superagent-reuse-hybrid.md): keep the Studio room/leads/authority and
+> port the Ticket/Assignment/Report, worker-slot/background, health/stage, GitHub
+> issue/PR and worker-prompt patterns into the Python app. The host-mediated design
+> below is the implementation shape; the one-repo-per-profile gateway is a fallback.
 
 ## 1. Why the live two-department demonstration failed
 

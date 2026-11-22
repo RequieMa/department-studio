@@ -1,9 +1,10 @@
 # Superagent-per-repository gateway — validation
 
-Status: **validated from the local dsh-superagent source and DSH docs; not implemented.**
-This document tests the idea that each GitHub repository is bound to its own
-`dsh-superagent`, while Department Studio only displays the resulting conversations
-and files issues when work should start.
+Status: **fallback validation from the local dsh-superagent source and DSH docs;
+not implemented.** The preferred direction is now the hybrid
+[reuse-selected-superagent-implementation](superagent-reuse-hybrid.md) inside Studio.
+This gateway remains an option only if whole-repository delegation to existing
+superagent instances is chosen later.
 
 ## Verdict
 
