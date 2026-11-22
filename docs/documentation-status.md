@@ -127,3 +127,5 @@ counted as "all plan checkboxes green"; they remain process gaps.
   claimed.
 - Backup: `artifacts/live-demo-pre-live-2026-11-21-232350/` (git-ignored, SHA256SUMS,
   SQLite integrity `ok`). The live directory was not migrated or restarted.
+- Agent GitHub identity: `gh-agent` is logged in as `RequieMa-Agent`; no superagent
+  repository is configured and no issue was created.

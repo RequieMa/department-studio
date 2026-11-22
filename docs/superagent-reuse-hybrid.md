@@ -221,9 +221,11 @@ not block the worker/team work on it.
    defaulting to the lead model. Implemented as configuration; worker execution is
    not implemented.
 4. **Worktree layout/root and retention:** still open.
-5. **GitHub identity for issue creation:** still open; the dedicated
-   `requiema_rig@163.com` agent account login is pending browser authorization.
-6. **First live demo repo:** still open; use a throwaway private repo.
+5. **GitHub identity for issue creation:** the dedicated agent account is logged in
+   through `gh-agent` as `RequieMa-Agent`; the issue-creation identity is still open.
+6. **First live demo repo:** still open. `gh-agent` currently sees
+   `RequieMa-Agent/dual-faced-world-w12-evidence` (public); do not use it without
+   explicit approval, and prefer a throwaway private repository.
 7. **A2A:** deferred.
 
 No code is changed by this proposal. The first implementation step should be Phase 1

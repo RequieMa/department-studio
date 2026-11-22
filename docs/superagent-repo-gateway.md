@@ -52,8 +52,10 @@ A2A would only matter for external, independently hosted agent services.
 - Requests normally arrive through the agent account's notifications. An issue body
   edited later to add a mention is not received; post a new comment instead.
 - The agent account must have push access and be signed into a dedicated `gh` wrapper.
-  The current `gh-agent` wrapper exists but is **not logged in**; the main `gh` session
-  is a personal account (`RequieMa`) and is not the superagent's agent identity.
+  `gh-agent` is now logged in as `RequieMa-Agent` (device-flow authorization completed
+  on 2026-11-22; GitHub hides the account email, so the 163 address itself is not
+  independently visible through the API). The main `gh` session is still the personal
+  account `RequieMa` and is not the superagent's agent identity.
 - The current superagent state DB has no tickets/threads/triggers and no configured
   repository; its profile panel port is not listening. It is not ready to accept work.
 
@@ -107,9 +109,10 @@ and Host `127.0.0.1:<port>`; browser direct calls are blocked by same-origin rul
   notifications by its configured repository and keeps its own cursor. It is not
   verified across profiles, and it multiplies notification polling/rate-limit use.
   Separate agent accounts per repo/profile are the safer default.
-- `gh-agent` must be logged in as the agent account. The current wrapper is **not**
-  logged in; the main `gh` session is a personal account and must not silently become
-  the agent.
+- `gh-agent` is logged in as `RequieMa-Agent`; the main `gh` session is a personal
+  account and must not silently become the agent. The agent currently sees one
+  repository, `RequieMa-Agent/dual-faced-world-w12-evidence` (public, admin); that is
+  not yet an approved test target.
 - The app must supervise each profile independently: reachability, health, setup,
   source poll errors, worker load, stuck Tickets and restart. One instance's failure
   must not take down the project room.
@@ -272,10 +275,11 @@ A2A is not needed for GitHub-mediated repo superagents:
 7. Only then decide whether the Studio room should mirror issues as the primary
    conversation, or whether a direct chat API is required (not available today).
 
-The current environment cannot complete these steps: `gh-agent` is not logged in, the
-superagent profile has no repository configured and is not listening, and the local
-sandbox blocks writing the profile's `.artifacts` control lock. No GitHub issue was
-created during this validation.
+The current environment cannot complete these steps yet: `gh-agent` is logged in, but
+the superagent profile still has no repository configured and is not listening, and
+the local sandbox blocks writing the profile's `.artifacts` control lock. No GitHub
+issue was created during this validation. A throwaway/test repository must be chosen
+before starting a profile or creating a test issue.
 
 ## Recommendation
 
