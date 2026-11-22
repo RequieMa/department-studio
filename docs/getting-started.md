@@ -36,8 +36,9 @@ Do not infer these from the UI or design documents:
   Code smoke run that did not finish.
 
 See [documentation and plan status](documentation-status.md), the
-[known issues register](known-issues.md) and the
-[hybrid design](superagent-reuse-hybrid.md) for the planned next increments.
+[known issues register](known-issues.md), the
+[copyable agent prompt for an external project](agent-prompt-external-project.md)
+and the [hybrid design](superagent-reuse-hybrid.md) for the planned next increments.
 
 ## 1. Requirements
 
