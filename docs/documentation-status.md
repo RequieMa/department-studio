@@ -68,6 +68,7 @@ counted as "all plan checkboxes green"; they remain process gaps.
 | `docs/superagent-repo-gateway.md` | Fallback validation | one superagent per repo, GitHub issue/comment mirror, supervisor; not primary |
 | `docs/superagent-reuse-hybrid.md` | Preferred proposal | port selected superagent Ticket/worker/health/GitHub patterns into Studio; not implemented |
 | `docs/getting-started.md` | Current usage guide | external project, Web status, validation checklist |
+| `docs/known-issues.md` | Current issue register | 18 open/blocked/deferred gaps, fixed CLI bug and non-issues |
 | `docs/research/a2a-and-runtime-adapters.md` | Research, implementation note added | A2A still deferred |
 | `docs/frontend-integration.md` | Historical evidence | pre-integration candidate; not current |
 | `docs/relaunch-integration.md` | Historical evidence | v1-era relaunch; not current |

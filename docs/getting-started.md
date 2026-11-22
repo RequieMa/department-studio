@@ -35,7 +35,8 @@ Do not infer these from the UI or design documents:
   read-only Pi config directory, an invalid DeepSeek key (HTTP 401), and a Claude
   Code smoke run that did not finish.
 
-See [documentation and plan status](documentation-status.md) and the
+See [documentation and plan status](documentation-status.md), the
+[known issues register](known-issues.md) and the
 [hybrid design](superagent-reuse-hybrid.md) for the planned next increments.
 
 ## 1. Requirements
