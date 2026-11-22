@@ -7,6 +7,7 @@ This is the communication bootstrap described in `docs/superpowers/specs/2026-11
 **Live model-backed collaboration has not been demonstrated with the new adapters.** Automated replies are explicitly synthetic test fixtures. A bounded live attempt on 2026-11-21 was blocked by a read-only Pi config directory, an invalid DeepSeek key (HTTP 401), and a Claude Code smoke run that did not finish; no success is claimed. See `docs/runtime-abstraction.md`, `docs/verification.md` and the [documentation status matrix](docs/documentation-status.md) for the contract, evidence and remaining checks.
 
 For the prepared two-department live demonstration, follow `docs/live-demo.md`.
+The proposed lead→worker→watchdog→multi-repository architecture and A2A evaluation are in [worker teams design](docs/worker-teams-design.md); they are not implemented yet.
 It covers provider readiness, user-chosen setup, the explicit peer-request prompt,
 and the evidence needed before calling the demonstration successful.
 

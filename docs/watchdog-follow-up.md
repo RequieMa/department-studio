@@ -37,6 +37,9 @@ an arbitrary short lifetime cap. This document changes no current runtime behavi
 - Store only bounded, sanitized observations keyed by stable department/delivery IDs.
   Define restart recovery, stale observations and Activity resolution atomically.
 
+See [worker teams design](worker-teams-design.md) for the current phase-aware,
+notify-first watchdog proposal covering leads, workers, dependencies and restart.
+
 ## Required before implementation
 
 Human review of the replacement deadline policy and any cancellation-control changes;
