@@ -89,6 +89,89 @@ and Host `127.0.0.1:<port>`; browser direct calls are blocked by same-origin rul
   activity, repeated failure, and restart policy. It should alert/notify, not silently
   kill.
 
+## Can N superagents run in parallel?
+
+**Yes at the process/profile level, with hard constraints:**
+
+- Each instance is one DSH profile (`dsh --profile <name>`) in the `dsh-<profile>` tmux
+  session. `scripts/dsh-superagent` keeps its control lock, service pid, logs and stop
+  marker under `.artifacts/control/profiles/<profile>` and filters processes by
+  `--profile`. Distinct profiles therefore do not block one another.
+- Each profile needs its own `webserver.port`, `stateDir` and management URL. Reusing
+  the default 3082 or one state directory for two profiles is not supported.
+- One profile's worker pool, Tickets, worktrees and model concurrency are independent.
+  N profiles multiply worker slots, model calls, disk use and GitHub API traffic; there
+  is no cross-profile global worker cap in superagent.
+- A shared GitHub agent account is technically plausible: each GitHub Source filters
+  notifications by its configured repository and keeps its own cursor. It is not
+  verified across profiles, and it multiplies notification polling/rate-limit use.
+  Separate agent accounts per repo/profile are the safer default.
+- `gh-agent` must be logged in as the agent account. The current wrapper is **not**
+  logged in; the main `gh` session is a personal account and must not silently become
+  the agent.
+- The app must supervise each profile independently: reachability, health, setup,
+  source poll errors, worker load, stuck Tickets and restart. One instance's failure
+  must not take down the project room.
+
+So parallel execution across repositories is viable; it is an **N-process deployment**,
+not one superagent with N repo workers.
+
+## Three information channels
+
+The user's split is the right product boundary, but the current superagent does not
+provide the third channel by itself.
+
+### 1. Repository-internal channel — GitHub Issues/PRs
+
+All implementation detail, worker reports, branch/PR discussion, CI and review stay in
+the repository's Issues/PRs. Studio should store an external reference
+(`repo`, issue/PR number, ticket ID) and show only a compact status/link. Do not copy
+the full GitHub thread into the room; that would recreate the noise the split is meant
+to remove.
+
+### 2. Shared knowledge channel — project docs
+
+A project-level docs folder or, for multi-repo/remote work, a dedicated docs
+repository is the shared source of truth for cross-department facts, decisions,
+contracts, glossary and links. Issue/comment bodies should reference the exact
+file path or commit-pinned URL, never paste the document.
+
+- A dedicated docs repo is more portable and auditable than a Studio-private folder.
+- Superagent workers run with full local access, but the superagent Source only sees
+  its own repository; the issue/comment must give the exact docs path/URL.
+- Decide whether workers may write docs. Prefer a PR to the docs repo, or lead/app
+  writes with worker proposals; do not grant broad push just to record notes.
+- Studio can index the docs repo/folder and show it in the room, but the canonical
+  content stays in the docs source.
+
+### 3. Cross-department room channel — Studio room (web now, Feishu/WeChat later)
+
+This is the gap. Superagent's Sources are GitHub and Feishu only. Its management API
+has no arbitrary chat send/receive endpoint, and its worker sessions are not room
+participants.
+
+Options, in order of preference:
+
+1. **Room MCP/DSH tool bridge (recommended for the web room).** Add a small DSH
+   plugin/MCP server to each superagent profile exposing bounded
+   `room_post`/`room_read` tools backed by Studio's authenticated room bridge. Only
+   the lead/orchestrator preset gets the tools; workers do not. The room remains
+   Studio-owned; superagent leads can participate without GitHub issue duplication.
+   This needs a feasibility spike: confirm the superagent router preset can load an
+   extra MCP client/tool and that tool calls are available in its main Session.
+2. **Feishu-native room (later channel).** Superagent already supports a Feishu Source.
+   A shared Feishu group could be the room, with one bot per profile and explicit
+   mentions. The web room would bridge to Feishu. This is viable for the later
+   WeChat/Feishu phase, but not a web-first implementation.
+3. **GitHub issue relay (fallback).** Studio mirrors selected comments from a
+   coordination issue per repo. This is asynchronous, duplicates coordination across
+   repos and is not a true shared room. Use only as a temporary integration.
+4. **A2A (not now).** Superagent has no A2A endpoint; A2A would require an adapter and
+   does not replace the room bridge for the current web UI.
+
+The room should carry only cross-department coordination, decisions, notifications and
+links to docs/issues. Repo details and long evidence stay in channel 1 or 2.
+
 ## Proposed gateway architecture
 
 ```text
@@ -196,8 +279,10 @@ created during this validation.
 ## Recommendation
 
 - **Prefer the superagent-per-repo gateway over rebuilding worker pools/watchdog in
-  Studio**, provided the operational cost of one profile per repo and GitHub-mediated
-  conversation is acceptable.
+  Studio**, provided the operational cost of N profiles/ports/state dirs and a room
+  bridge is acceptable.
+- Add the room MCP/DSH bridge before claiming the web room is the cross-department
+  channel; GitHub comment mirroring alone is not real-time room chat.
 - Build the gateway thin: repo registry, issue dispatch, read-only status proxy,
   GitHub comment mirror, supervisor attention. Do not reimplement superagent's
   Ticket/worker/retry internals.
